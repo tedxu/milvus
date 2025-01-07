@@ -118,12 +118,6 @@ func (s *SyncManagerSuite) TestSubmit() {
 	manager := NewSyncManager(s.chunkManager)
 	task := s.getSuiteSyncTask()
 	task.WithMetaWriter(BrokerMetaWriter(s.broker, 1))
-	task.WithTimeRange(50, 100)
-	task.WithCheckpoint(&msgpb.MsgPosition{
-		ChannelName: s.channelName,
-		MsgID:       []byte{1, 2, 3, 4},
-		Timestamp:   100,
-	})
 
 	f, err := manager.SyncData(context.Background(), task)
 	s.NoError(err)
@@ -158,12 +152,6 @@ func (s *SyncManagerSuite) TestCompacted() {
 	manager := NewSyncManager(s.chunkManager)
 	task := s.getSuiteSyncTask()
 	task.WithMetaWriter(BrokerMetaWriter(s.broker, 1))
-	task.WithTimeRange(50, 100)
-	task.WithCheckpoint(&msgpb.MsgPosition{
-		ChannelName: s.channelName,
-		MsgID:       []byte{1, 2, 3, 4},
-		Timestamp:   100,
-	})
 
 	f, err := manager.SyncData(context.Background(), task)
 	s.NoError(err)
