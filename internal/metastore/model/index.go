@@ -1,6 +1,8 @@
 package model
 
 import (
+	"slices"
+
 	"google.golang.org/protobuf/proto"
 
 	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
@@ -110,6 +112,19 @@ func MarshalIndexModel(index *Index) *indexpb.FieldIndex {
 //
 //	return &newIdx
 //}
+
+// ShallowCloneIndex returns a copy of index for read paths. The copy shares
+// index's param entries, so callers must not modify an entry; replacing a
+// param slice or appending to it is fine. Each slice is clipped, so an append
+// reallocates instead of writing into index's backing array. Use CloneIndex
+// to modify entries.
+func ShallowCloneIndex(index *Index) *Index {
+	cloned := *index
+	cloned.TypeParams = slices.Clip(index.TypeParams)
+	cloned.IndexParams = slices.Clip(index.IndexParams)
+	cloned.UserIndexParams = slices.Clip(index.UserIndexParams)
+	return &cloned
+}
 
 func CloneIndex(index *Index) *Index {
 	clonedIndex := &Index{

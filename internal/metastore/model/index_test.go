@@ -52,3 +52,44 @@ func TestUnmarshalIndexModel(t *testing.T) {
 	assert.Equal(t, indexModel.IndexID, ret.IndexID)
 	assert.Nil(t, UnmarshalIndexModel(nil))
 }
+
+func TestShallowCloneIndex(t *testing.T) {
+	newParams := func() []*commonpb.KeyValuePair {
+		// Spare capacity, as a slice grown by proto unmarshal may have.
+		params := make([]*commonpb.KeyValuePair, 1, 4)
+		params[0] = &commonpb.KeyValuePair{Key: "k", Value: "v"}
+		return params
+	}
+	fields := []struct {
+		name string
+		get  func(*Index) *[]*commonpb.KeyValuePair
+	}{
+		{"TypeParams", func(i *Index) *[]*commonpb.KeyValuePair { return &i.TypeParams }},
+		{"IndexParams", func(i *Index) *[]*commonpb.KeyValuePair { return &i.IndexParams }},
+		{"UserIndexParams", func(i *Index) *[]*commonpb.KeyValuePair { return &i.UserIndexParams }},
+	}
+	for _, field := range fields {
+		t.Run(field.name, func(t *testing.T) {
+			stored := &Index{CollectionID: 1, IndexID: 2, IndexName: "idx", TypeParams: newParams(), IndexParams: newParams(), UserIndexParams: newParams()}
+			cloned := ShallowCloneIndex(stored)
+			assert.NotSame(t, stored, cloned)
+			assert.Equal(t, stored, cloned)
+			// Entries are shared, not copied.
+			assert.Same(t, (*field.get(stored))[0], (*field.get(cloned))[0])
+
+			// Appending to the clone must not write into stored's backing array.
+			*field.get(cloned) = append(*field.get(cloned), &commonpb.KeyValuePair{Key: "added"})
+			assert.Len(t, *field.get(stored), 1)
+			assert.Nil(t, (*field.get(stored))[:2][1])
+
+			// Replacing the clone's slice must not change stored.
+			*field.get(cloned) = nil
+			assert.Len(t, *field.get(stored), 1)
+		})
+	}
+	// Nil slices stay nil.
+	cloned := ShallowCloneIndex(&Index{IndexID: 3})
+	assert.Nil(t, cloned.TypeParams)
+	assert.Nil(t, cloned.IndexParams)
+	assert.Nil(t, cloned.UserIndexParams)
+}

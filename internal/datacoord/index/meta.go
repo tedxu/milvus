@@ -860,7 +860,7 @@ func (m *IndexMeta) GetIndexesForCollection(collID UniqueID, indexName string) [
 			continue
 		}
 		if indexName == "" || indexName == index.IndexName {
-			indexInfos = append(indexInfos, model.CloneIndex(index))
+			indexInfos = append(indexInfos, model.ShallowCloneIndex(index))
 		}
 	}
 	return indexInfos
@@ -874,13 +874,13 @@ func (m *IndexMeta) GetIndexesByID(collectionID int64, ids []int64) []*model.Ind
 	result := make([]*model.Index, 0, len(ids))
 	for _, id := range ids {
 		if index := m.Indexes[collectionID][id]; index != nil {
-			result = append(result, model.CloneIndex(index))
+			result = append(result, model.ShallowCloneIndex(index))
 		}
 	}
 	return result
 }
 
-// ListAllIndexes returns a clone of every index that is not deleted, across all
+// ListAllIndexes returns a shallow clone of every index that is not deleted, across all
 // collections. Used by the feature usage report.
 func (m *IndexMeta) ListAllIndexes() []*model.Index {
 	m.fieldIndexLock.RLock()
@@ -892,7 +892,7 @@ func (m *IndexMeta) ListAllIndexes() []*model.Index {
 			if index.IsDeleted {
 				continue
 			}
-			out = append(out, model.CloneIndex(index))
+			out = append(out, model.ShallowCloneIndex(index))
 		}
 	}
 	return out
@@ -908,7 +908,7 @@ func (m *IndexMeta) GetFieldIndexes(collID, fieldID UniqueID, indexName string) 
 			continue
 		}
 		if indexName == "" || indexName == index.IndexName {
-			indexInfos = append(indexInfos, model.CloneIndex(index))
+			indexInfos = append(indexInfos, model.ShallowCloneIndex(index))
 		}
 	}
 	return indexInfos
@@ -1038,7 +1038,7 @@ func (m *IndexMeta) GetQueryViewIndexSnapshot(collectionID UniqueID, segmentIDs 
 	indexes := make([]*model.Index, 0, len(m.Indexes[collectionID]))
 	for _, index := range m.Indexes[collectionID] {
 		if !index.IsDeleted {
-			indexes = append(indexes, model.CloneIndex(index))
+			indexes = append(indexes, model.ShallowCloneIndex(index))
 		}
 	}
 	segmentIndexes := make(map[int64]map[UniqueID]*model.SegmentIndex, len(segmentIDs))
