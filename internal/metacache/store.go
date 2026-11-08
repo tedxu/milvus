@@ -131,6 +131,9 @@ type MetaView interface {
 	GetCollectionIDs() []int64
 	GetCollectionByName(dbName, name string) (*CollectionInfo, bool)
 	GetDatabase(dbName string) (*DatabaseInfo, bool)
+
+	// Indexes — read
+	IndexView
 }
 
 // MetaStore is the read-write metacache interface, used by components that
@@ -138,6 +141,9 @@ type MetaView interface {
 // provides all functionality directly — no catalog accessor is exposed.
 type MetaStore interface {
 	MetaView
+
+	// Indexes — write. DataCoord's IndexMeta is the only writer.
+	IndexStore
 
 	// Segments — write (in-memory only)
 	PutSegment(segment *datapb.SegmentInfo)
@@ -202,6 +208,9 @@ type metaStore struct {
 
 	// Channel checkpoints
 	checkpoints map[string]*msgpb.MsgPosition
+
+	// Index definitions and segment index records, under their own lock.
+	index indexSection
 }
 
 // NewMetaStore creates an empty, ready-to-use MetaStore that owns the
@@ -215,6 +224,7 @@ func NewMetaStore(catalog metastore.DataCoordCatalog) MetaStore {
 		segCollIdx:  make(map[int64]map[int64]struct{}),
 		segChanIdx:  make(map[string]map[int64]struct{}),
 		checkpoints: make(map[string]*msgpb.MsgPosition),
+		index:       newIndexSection(),
 	}
 	s.SetCollectionSource(NewCollections())
 	return s
