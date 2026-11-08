@@ -33,13 +33,13 @@ import (
 
 	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
 	"github.com/milvus-io/milvus/internal/datacoord/meta"
+	"github.com/milvus-io/milvus/internal/metacache"
 	"github.com/milvus-io/milvus/internal/metastore"
 	"github.com/milvus-io/milvus/internal/metastore/model"
 	"github.com/milvus-io/milvus/pkg/v3/metrics"
 	"github.com/milvus-io/milvus/pkg/v3/proto/indexpb"
 	"github.com/milvus-io/milvus/pkg/v3/proto/workerpb"
 	"github.com/milvus-io/milvus/pkg/v3/util/merr"
-	"github.com/milvus-io/milvus/pkg/v3/util/typeutil"
 )
 
 type taskCountsCatalog struct {
@@ -86,7 +86,7 @@ func (c *taskCountsCatalog) DropIndexes(context.Context, []*model.Index) error {
 // publication, including failed persistence, not just the final aggregate.
 func scanIndexTaskCounts(m *IndexMeta) indexTaskStateCounts {
 	var counts indexTaskStateCounts
-	for _, task := range m.SegmentBuildInfo.List() {
+	for _, task := range m.Store().ListSegmentIndexBuilds() {
 		if task.IsDeleted || !m.IsIndexExist(task.CollectionID, task.IndexID) {
 			continue
 		}
@@ -105,7 +105,7 @@ func scanIndexTaskCounts(m *IndexMeta) indexTaskStateCounts {
 func scanStoredIndexSizes(m *IndexMeta) (raw map[[2]int64]int64, active map[int64]int64) {
 	raw = make(map[[2]int64]int64)
 	active = make(map[int64]int64)
-	for _, task := range m.SegmentBuildInfo.List() {
+	for _, task := range m.Store().ListSegmentIndexBuilds() {
 		if task.IndexSerializedSize == 0 {
 			continue
 		}
@@ -219,7 +219,7 @@ func TestIndexTaskCountsRecovery(t *testing.T) {
 		&model.SegmentIndex{CollectionID: 1, IndexID: 10, BuildID: 100, IndexState: commonpb.IndexState_Finished, IsDeleted: true, IndexSerializedSize: 1000},
 		&model.SegmentIndex{CollectionID: 1, IndexID: 10, BuildID: 101, IndexState: commonpb.IndexState(100), IndexSerializedSize: 1010},
 	)
-	m, err := NewIndexMeta(context.Background(), catalog, []int64{1, 2, 3})
+	m, err := NewIndexMeta(context.Background(), catalog, metacache.NewMetaStore(nil), []int64{1, 2, 3})
 	require.NoError(t, err)
 	assertIndexTaskCounts(t, m)
 	require.Equal(t, indexTaskStateCounts{1, 1, 1, 1, 1, 1}, m.indexTaskCountsSnapshot())
@@ -246,7 +246,7 @@ func TestIndexTaskCountsLifecycle(t *testing.T) {
 	metrics.DataCoordStoredIndexFilesSize.Reset()
 	ctx := context.Background()
 	catalog := &taskCountsCatalog{}
-	m, err := NewIndexMeta(ctx, catalog, []int64{1, 2, 3})
+	m, err := NewIndexMeta(ctx, catalog, metacache.NewMetaStore(nil), []int64{1, 2, 3})
 	require.NoError(t, err)
 	require.NoError(t, m.CreateIndex(ctx, &model.Index{CollectionID: 1, IndexID: 10}))
 	task := &model.SegmentIndex{CollectionID: 1, IndexID: 10, SegmentID: 20, BuildID: 30}
@@ -313,7 +313,7 @@ func TestIndexTaskCountsRecoveryReplacement(t *testing.T) {
 			{CollectionID: 1, IndexID: 10, SegmentID: 20, BuildID: 30, IndexState: commonpb.IndexState_Finished, IndexSerializedSize: 300},
 		},
 	}
-	m, err := NewIndexMeta(context.Background(), catalog, []int64{1, 2, 3})
+	m, err := NewIndexMeta(context.Background(), catalog, metacache.NewMetaStore(nil), []int64{1, 2, 3})
 	require.NoError(t, err)
 	assertIndexTaskCounts(t, m)
 	require.Equal(t, indexTaskStateCounts{0, 0, 0, 1}, m.indexTaskCountsSnapshot())
@@ -348,7 +348,7 @@ func TestIndexTaskCountsPersistenceFailures(t *testing.T) {
 				indexes: []*model.Index{{CollectionID: 1, IndexID: 10, IsDeleted: name == "remove-indexes"}},
 				tasks:   []*model.SegmentIndex{{CollectionID: 1, IndexID: 10, SegmentID: 20, BuildID: 30, IndexState: commonpb.IndexState_Unissued, IndexSerializedSize: 500}},
 			}
-			m, err := NewIndexMeta(ctx, catalog, []int64{1, 2, 3})
+			m, err := NewIndexMeta(ctx, catalog, metacache.NewMetaStore(nil), []int64{1, 2, 3})
 			require.NoError(t, err)
 			before := m.indexTaskCountsSnapshot()
 			catalog.err = merr.ErrServiceUnavailable
@@ -365,7 +365,7 @@ func TestIndexTaskCountsPersistenceFailures(t *testing.T) {
 func TestIndexTaskCountsRandomized(t *testing.T) {
 	metrics.DataCoordStoredIndexFilesSize.Reset()
 	ctx := context.Background()
-	m, err := NewIndexMeta(ctx, &taskCountsCatalog{}, nil)
+	m, err := NewIndexMeta(ctx, &taskCountsCatalog{}, metacache.NewMetaStore(nil), nil)
 	require.NoError(t, err)
 	rng := rand.New(rand.NewSource(42))
 	for i := 0; i < 500; i++ {
@@ -404,7 +404,7 @@ func TestIndexTaskCountsRandomized(t *testing.T) {
 func TestIndexTaskCountsConcurrent(t *testing.T) {
 	metrics.DataCoordStoredIndexFilesSize.Reset()
 	ctx := context.Background()
-	m, err := NewIndexMeta(ctx, &taskCountsCatalog{}, nil)
+	m, err := NewIndexMeta(ctx, &taskCountsCatalog{}, metacache.NewMetaStore(nil), nil)
 	require.NoError(t, err)
 	const builds = 16
 	require.NoError(t, m.CreateIndex(ctx, &model.Index{CollectionID: 1, IndexID: 10}))
@@ -493,12 +493,7 @@ func TestIndexTaskCountsConcurrent(t *testing.T) {
 func BenchmarkIndexTaskCounts(b *testing.B) {
 	for _, size := range []int{1000, 100000} {
 		b.Run(fmt.Sprint(size), func(b *testing.B) {
-			m := &IndexMeta{
-				ctx:              context.Background(),
-				Indexes:          make(map[int64]map[int64]*model.Index),
-				SegmentBuildInfo: NewSegmentIndexBuildInfo(),
-				SegmentIndexes:   typeutil.NewConcurrentMap[int64, *typeutil.ConcurrentMap[int64, *model.SegmentIndex]](),
-			}
+			m := NewIndexMetaForTest(nil, nil)
 			m.updateCollectionIndex(&model.Index{CollectionID: 1, IndexID: 10})
 			for i := 0; i < size; i++ {
 				m.updateSegmentIndex(&model.SegmentIndex{CollectionID: 1, IndexID: 10, SegmentID: int64(i), BuildID: int64(i), IndexState: commonpb.IndexState_Finished})
@@ -529,7 +524,7 @@ func BenchmarkIndexTaskCounts(b *testing.B) {
 func TestIndexTaskCountsManifestInstallAvoidsDDLLock(t *testing.T) {
 	metrics.DataCoordStoredIndexFilesSize.Reset()
 	ctx := context.Background()
-	m, err := NewIndexMeta(ctx, &taskCountsCatalog{}, nil)
+	m, err := NewIndexMeta(ctx, &taskCountsCatalog{}, metacache.NewMetaStore(nil), nil)
 	require.NoError(t, err)
 	require.NoError(t, m.CreateIndex(ctx, &model.Index{CollectionID: 1, IndexID: 10}))
 	require.NoError(t, m.AddSegmentIndex(ctx, &model.SegmentIndex{CollectionID: 1, IndexID: 10, SegmentID: 20, BuildID: 30}))
@@ -575,7 +570,7 @@ func TestIndexTaskCountsManifestInstallAvoidsDDLLock(t *testing.T) {
 func TestIndexTaskCountsPublishDuringScrape(t *testing.T) {
 	metrics.DataCoordStoredIndexFilesSize.Reset()
 	ctx := context.Background()
-	m, err := NewIndexMeta(ctx, &taskCountsCatalog{}, nil)
+	m, err := NewIndexMeta(ctx, &taskCountsCatalog{}, metacache.NewMetaStore(nil), nil)
 	require.NoError(t, err)
 	for id := int64(1); id <= 3; id++ {
 		require.NoError(t, m.CreateIndex(ctx, &model.Index{CollectionID: id, IndexID: 10}))

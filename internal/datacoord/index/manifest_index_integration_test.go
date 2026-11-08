@@ -67,21 +67,19 @@ func TestBuildManifestIndexInfoFromDataCoordMetadata(t *testing.T) {
 			{FieldID: fieldID, Name: "vector"},
 		}},
 	})
-	im := &IndexMeta{
-		Indexes: map[UniqueID]map[UniqueID]*model.Index{
-			collectionID: {indexID: {
-				CollectionID: collectionID,
-				FieldID:      fieldID,
-				IndexID:      indexID,
-				IndexName:    "vector_hnsw",
-				IndexParams: []*commonpb.KeyValuePair{
-					{Key: common.IndexTypeKey, Value: "HNSW"},
-					{Key: "M", Value: "16"},
-				},
-				TypeParams: []*commonpb.KeyValuePair{{Key: common.DimKey, Value: "8"}},
-			}},
-		},
-	}
+	im := NewIndexMetaForTest(nil, map[UniqueID]map[UniqueID]*model.Index{
+		collectionID: {indexID: {
+			CollectionID: collectionID,
+			FieldID:      fieldID,
+			IndexID:      indexID,
+			IndexName:    "vector_hnsw",
+			IndexParams: []*commonpb.KeyValuePair{
+				{Key: common.IndexTypeKey, Value: "HNSW"},
+				{Key: "M", Value: "16"},
+			},
+			TypeParams: []*commonpb.KeyValuePair{{Key: common.DimKey, Value: "8"}},
+		}},
+	})
 	m := &meta.Meta{
 		MetaStore:    ms,
 		ChunkManager: storage.NewLocalChunkManager(objectstorage.RootPath("files")),
@@ -139,17 +137,15 @@ func TestBuildManifestIndexInfoFromDataCoordMetadata(t *testing.T) {
 // whose index type was downgraded away from the collection definition.
 func TestBuildManifestIndexInfoRespectsSegmentIndexTypeOverride(t *testing.T) {
 	ms := metacache.NewMetaStore(nil)
-	im := &IndexMeta{
-		Indexes: map[UniqueID]map[UniqueID]*model.Index{
-			1: {101: {
-				CollectionID: 1,
-				FieldID:      100,
-				IndexID:      101,
-				IndexName:    "vector_hnsw",
-				IndexParams:  []*commonpb.KeyValuePair{{Key: common.IndexTypeKey, Value: "HNSW"}},
-			}},
-		},
-	}
+	im := NewIndexMetaForTest(nil, map[UniqueID]map[UniqueID]*model.Index{
+		1: {101: {
+			CollectionID: 1,
+			FieldID:      100,
+			IndexID:      101,
+			IndexName:    "vector_hnsw",
+			IndexParams:  []*commonpb.KeyValuePair{{Key: common.IndexTypeKey, Value: "HNSW"}},
+		}},
+	})
 	m := &meta.Meta{
 		MetaStore:    ms,
 		ChunkManager: storage.NewLocalChunkManager(objectstorage.RootPath("files")),
@@ -502,7 +498,7 @@ func TestReloadRecoversDroppedIndexEntriesSoGCCanRetract(t *testing.T) {
 
 	// The record must come back even though nothing references it any more:
 	// it is the only handle GC has on the stranded artifact.
-	recovered, ok := mDomains.IndexMeta.SegmentBuildInfo.Get(5100)
+	recovered, ok := mDomains.IndexMeta.Store().GetSegmentIndexByBuildID(5100)
 	require.True(t, ok, "a dropped index's manifest entry must still be recovered, or GC can never retract it")
 	assert.EqualValues(t, 500, recovered.IndexID)
 	assert.EqualValues(t, 5001, recovered.SegmentID)

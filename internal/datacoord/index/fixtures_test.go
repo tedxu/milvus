@@ -31,439 +31,220 @@ import (
 	"github.com/milvus-io/milvus/pkg/v3/common"
 	"github.com/milvus-io/milvus/pkg/v3/objectstorage"
 	"github.com/milvus-io/milvus/pkg/v3/proto/datapb"
-	"github.com/milvus-io/milvus/pkg/v3/util/lock"
-	"github.com/milvus-io/milvus/pkg/v3/util/typeutil"
 )
 
 func createIndexMeta(catalog metastore.DataCoordCatalog) *IndexMeta {
-	indexBuildInfo := NewSegmentIndexBuildInfo()
-	indexBuildInfo.Add(&model.SegmentIndex{
-		SegmentID:           meta.SegID,
-		CollectionID:        meta.CollID,
-		PartitionID:         meta.PartID,
-		NumRows:             1025,
-		IndexID:             meta.IndexID,
-		BuildID:             meta.BuildID,
-		NodeID:              0,
-		IndexVersion:        0,
-		IndexState:          commonpb.IndexState_Unissued,
-		FailReason:          "",
-		IsDeleted:           false,
-		CreatedUTCTime:      0,
-		IndexFileKeys:       nil,
-		IndexSerializedSize: 1,
-	})
-
-	indexBuildInfo.Add(&model.SegmentIndex{
-		SegmentID:           meta.SegID + 1,
-		CollectionID:        meta.CollID,
-		PartitionID:         meta.PartID,
-		NumRows:             1026,
-		IndexID:             meta.IndexID,
-		BuildID:             meta.BuildID + 1,
-		NodeID:              meta.NodeID,
-		IndexVersion:        1,
-		IndexState:          commonpb.IndexState_InProgress,
-		FailReason:          "",
-		IsDeleted:           false,
-		CreatedUTCTime:      1111,
-		IndexFileKeys:       nil,
-		IndexSerializedSize: 1,
-	})
-
-	indexBuildInfo.Add(&model.SegmentIndex{
-		SegmentID:           meta.SegID + 2,
-		CollectionID:        meta.CollID,
-		PartitionID:         meta.PartID,
-		NumRows:             1026,
-		IndexID:             meta.IndexID,
-		BuildID:             meta.BuildID + 2,
-		NodeID:              meta.NodeID,
-		IndexVersion:        1,
-		IndexState:          commonpb.IndexState_InProgress,
-		FailReason:          "",
-		IsDeleted:           true,
-		CreatedUTCTime:      1111,
-		IndexFileKeys:       nil,
-		IndexSerializedSize: 1,
-	})
-
-	indexBuildInfo.Add(&model.SegmentIndex{
-		SegmentID:           meta.SegID + 3,
-		CollectionID:        meta.CollID,
-		PartitionID:         meta.PartID,
-		NumRows:             500,
-		IndexID:             meta.IndexID,
-		BuildID:             meta.BuildID + 3,
-		NodeID:              0,
-		IndexVersion:        0,
-		IndexState:          commonpb.IndexState_Unissued,
-		FailReason:          "",
-		IsDeleted:           false,
-		CreatedUTCTime:      1111,
-		IndexFileKeys:       nil,
-		IndexSerializedSize: 1,
-	})
-
-	indexBuildInfo.Add(&model.SegmentIndex{
-		SegmentID:           meta.SegID + 4,
-		CollectionID:        meta.CollID,
-		PartitionID:         meta.PartID,
-		NumRows:             1026,
-		IndexID:             meta.IndexID,
-		BuildID:             meta.BuildID + 4,
-		NodeID:              meta.NodeID,
-		IndexVersion:        1,
-		IndexState:          commonpb.IndexState_Finished,
-		FailReason:          "",
-		IsDeleted:           false,
-		CreatedUTCTime:      1111,
-		IndexFileKeys:       nil,
-		IndexSerializedSize: 1,
-	})
-
-	indexBuildInfo.Add(&model.SegmentIndex{
-		SegmentID:           meta.SegID + 5,
-		CollectionID:        meta.CollID,
-		PartitionID:         meta.PartID,
-		NumRows:             1026,
-		IndexID:             meta.IndexID,
-		BuildID:             meta.BuildID + 5,
-		NodeID:              0,
-		IndexVersion:        1,
-		IndexState:          commonpb.IndexState_Finished,
-		FailReason:          "",
-		IsDeleted:           false,
-		CreatedUTCTime:      1111,
-		IndexFileKeys:       nil,
-		IndexSerializedSize: 1,
-	})
-
-	indexBuildInfo.Add(&model.SegmentIndex{
-		SegmentID:           meta.SegID + 6,
-		CollectionID:        meta.CollID,
-		PartitionID:         meta.PartID,
-		NumRows:             1026,
-		IndexID:             meta.IndexID,
-		BuildID:             meta.BuildID + 6,
-		NodeID:              0,
-		IndexVersion:        1,
-		IndexState:          commonpb.IndexState_Finished,
-		FailReason:          "",
-		IsDeleted:           false,
-		CreatedUTCTime:      1111,
-		IndexFileKeys:       nil,
-		IndexSerializedSize: 1,
-	})
-
-	indexBuildInfo.Add(&model.SegmentIndex{
-		SegmentID:           meta.SegID + 7,
-		CollectionID:        meta.CollID,
-		PartitionID:         meta.PartID,
-		NumRows:             1026,
-		IndexID:             meta.IndexID,
-		BuildID:             meta.BuildID + 7,
-		NodeID:              0,
-		IndexVersion:        1,
-		IndexState:          commonpb.IndexState_Failed,
-		FailReason:          "error",
-		IsDeleted:           false,
-		CreatedUTCTime:      1111,
-		IndexFileKeys:       nil,
-		IndexSerializedSize: 1,
-	})
-
-	indexBuildInfo.Add(&model.SegmentIndex{
-		SegmentID:           meta.SegID + 8,
-		CollectionID:        meta.CollID,
-		PartitionID:         meta.PartID,
-		NumRows:             1026,
-		IndexID:             meta.IndexID,
-		BuildID:             meta.BuildID + 8,
-		NodeID:              meta.NodeID + 1,
-		IndexVersion:        1,
-		IndexState:          commonpb.IndexState_InProgress,
-		FailReason:          "",
-		IsDeleted:           false,
-		CreatedUTCTime:      1111,
-		IndexFileKeys:       nil,
-		IndexSerializedSize: 1,
-	})
-
-	indexBuildInfo.Add(&model.SegmentIndex{
-		SegmentID:           meta.SegID + 9,
-		CollectionID:        meta.CollID,
-		PartitionID:         meta.PartID,
-		NumRows:             500,
-		IndexID:             meta.IndexID,
-		BuildID:             meta.BuildID + 9,
-		NodeID:              0,
-		IndexVersion:        0,
-		IndexState:          commonpb.IndexState_Unissued,
-		FailReason:          "",
-		IsDeleted:           false,
-		CreatedUTCTime:      1111,
-		IndexFileKeys:       nil,
-		IndexSerializedSize: 1,
-	})
-
-	indexBuildInfo.Add(&model.SegmentIndex{
-		SegmentID:           meta.SegID + 10,
-		CollectionID:        meta.CollID,
-		PartitionID:         meta.PartID,
-		NumRows:             500,
-		IndexID:             meta.IndexID,
-		BuildID:             meta.BuildID + 10,
-		NodeID:              meta.NodeID,
-		IndexVersion:        0,
-		IndexState:          commonpb.IndexState_Unissued,
-		FailReason:          "",
-		IsDeleted:           false,
-		CreatedUTCTime:      1111,
-		IndexFileKeys:       nil,
-		IndexSerializedSize: 1,
-	})
-	segIndexes := typeutil.NewConcurrentMap[UniqueID, *typeutil.ConcurrentMap[UniqueID, *model.SegmentIndex]]()
-	segIdx0 := typeutil.NewConcurrentMap[UniqueID, *model.SegmentIndex]()
-	segIdx0.Insert(meta.IndexID, &model.SegmentIndex{
-		SegmentID:           meta.SegID,
-		CollectionID:        meta.CollID,
-		PartitionID:         meta.PartID,
-		NumRows:             1025,
-		IndexID:             meta.IndexID,
-		BuildID:             meta.BuildID,
-		NodeID:              0,
-		IndexVersion:        0,
-		IndexState:          commonpb.IndexState_Unissued,
-		FailReason:          "",
-		IsDeleted:           false,
-		CreatedUTCTime:      0,
-		IndexFileKeys:       nil,
-		IndexSerializedSize: 1,
-	})
-	segIdx1 := typeutil.NewConcurrentMap[UniqueID, *model.SegmentIndex]()
-	segIdx1.Insert(meta.IndexID, &model.SegmentIndex{
-		SegmentID:           meta.SegID + 1,
-		CollectionID:        meta.CollID,
-		PartitionID:         meta.PartID,
-		NumRows:             1026,
-		IndexID:             meta.IndexID,
-		BuildID:             meta.BuildID + 1,
-		NodeID:              meta.NodeID,
-		IndexVersion:        1,
-		IndexState:          commonpb.IndexState_InProgress,
-		FailReason:          "",
-		IsDeleted:           false,
-		CreatedUTCTime:      1111,
-		IndexFileKeys:       nil,
-		IndexSerializedSize: 1,
-	})
-	segIdx2 := typeutil.NewConcurrentMap[UniqueID, *model.SegmentIndex]()
-	segIdx2.Insert(meta.IndexID, &model.SegmentIndex{
-		SegmentID:           meta.SegID + 2,
-		CollectionID:        meta.CollID,
-		PartitionID:         meta.PartID,
-		NumRows:             1026,
-		IndexID:             meta.IndexID,
-		BuildID:             meta.BuildID + 2,
-		NodeID:              meta.NodeID,
-		IndexVersion:        1,
-		IndexState:          commonpb.IndexState_InProgress,
-		FailReason:          "",
-		IsDeleted:           true,
-		CreatedUTCTime:      1111,
-		IndexFileKeys:       nil,
-		IndexSerializedSize: 1,
-	})
-	segIdx3 := typeutil.NewConcurrentMap[UniqueID, *model.SegmentIndex]()
-	segIdx3.Insert(meta.IndexID, &model.SegmentIndex{
-		SegmentID:           meta.SegID + 3,
-		CollectionID:        meta.CollID,
-		PartitionID:         meta.PartID,
-		NumRows:             500,
-		IndexID:             meta.IndexID,
-		BuildID:             meta.BuildID + 3,
-		NodeID:              0,
-		IndexVersion:        0,
-		IndexState:          commonpb.IndexState_Unissued,
-		FailReason:          "",
-		IsDeleted:           false,
-		CreatedUTCTime:      1111,
-		IndexFileKeys:       nil,
-		IndexSerializedSize: 1,
-	})
-	segIdx4 := typeutil.NewConcurrentMap[UniqueID, *model.SegmentIndex]()
-	segIdx4.Insert(meta.IndexID, &model.SegmentIndex{
-		SegmentID:           meta.SegID + 4,
-		CollectionID:        meta.CollID,
-		PartitionID:         meta.PartID,
-		NumRows:             1026,
-		IndexID:             meta.IndexID,
-		BuildID:             meta.BuildID + 4,
-		NodeID:              meta.NodeID,
-		IndexVersion:        1,
-		IndexState:          commonpb.IndexState_Finished,
-		FailReason:          "",
-		IsDeleted:           false,
-		CreatedUTCTime:      1111,
-		IndexFileKeys:       nil,
-		IndexSerializedSize: 1,
-	})
-	segIdx5 := typeutil.NewConcurrentMap[UniqueID, *model.SegmentIndex]()
-	segIdx5.Insert(meta.IndexID, &model.SegmentIndex{
-		SegmentID:           meta.SegID + 5,
-		CollectionID:        meta.CollID,
-		PartitionID:         meta.PartID,
-		NumRows:             1026,
-		IndexID:             meta.IndexID,
-		BuildID:             meta.BuildID + 5,
-		NodeID:              0,
-		IndexVersion:        1,
-		IndexState:          commonpb.IndexState_Finished,
-		FailReason:          "",
-		IsDeleted:           false,
-		CreatedUTCTime:      1111,
-		IndexFileKeys:       nil,
-		IndexSerializedSize: 1,
-	})
-	segIdx6 := typeutil.NewConcurrentMap[UniqueID, *model.SegmentIndex]()
-	segIdx6.Insert(meta.IndexID, &model.SegmentIndex{
-		SegmentID:           meta.SegID + 6,
-		CollectionID:        meta.CollID,
-		PartitionID:         meta.PartID,
-		NumRows:             1026,
-		IndexID:             meta.IndexID,
-		BuildID:             meta.BuildID + 6,
-		NodeID:              0,
-		IndexVersion:        1,
-		IndexState:          commonpb.IndexState_Finished,
-		FailReason:          "",
-		IsDeleted:           false,
-		CreatedUTCTime:      1111,
-		IndexFileKeys:       nil,
-		IndexSerializedSize: 1,
-	})
-	segIdx7 := typeutil.NewConcurrentMap[UniqueID, *model.SegmentIndex]()
-	segIdx7.Insert(meta.IndexID, &model.SegmentIndex{
-		SegmentID:           meta.SegID + 7,
-		CollectionID:        meta.CollID,
-		PartitionID:         meta.PartID,
-		NumRows:             1026,
-		IndexID:             meta.IndexID,
-		BuildID:             meta.BuildID + 7,
-		NodeID:              0,
-		IndexVersion:        1,
-		IndexState:          commonpb.IndexState_Failed,
-		FailReason:          "error",
-		IsDeleted:           false,
-		CreatedUTCTime:      1111,
-		IndexFileKeys:       nil,
-		IndexSerializedSize: 1,
-	})
-	segIdx8 := typeutil.NewConcurrentMap[UniqueID, *model.SegmentIndex]()
-	segIdx8.Insert(meta.IndexID, &model.SegmentIndex{
-		SegmentID:           meta.SegID + 8,
-		CollectionID:        meta.CollID,
-		PartitionID:         meta.PartID,
-		NumRows:             1026,
-		IndexID:             meta.IndexID,
-		BuildID:             meta.BuildID + 8,
-		NodeID:              meta.NodeID + 1,
-		IndexVersion:        1,
-		IndexState:          commonpb.IndexState_InProgress,
-		FailReason:          "",
-		IsDeleted:           false,
-		CreatedUTCTime:      1111,
-		IndexFileKeys:       nil,
-		IndexSerializedSize: 1,
-	})
-	segIdx9 := typeutil.NewConcurrentMap[UniqueID, *model.SegmentIndex]()
-	segIdx9.Insert(meta.IndexID, &model.SegmentIndex{
-		SegmentID:           meta.SegID + 9,
-		CollectionID:        meta.CollID,
-		PartitionID:         meta.PartID,
-		NumRows:             500,
-		IndexID:             meta.IndexID,
-		BuildID:             meta.BuildID + 9,
-		NodeID:              0,
-		IndexVersion:        0,
-		IndexState:          commonpb.IndexState_Unissued,
-		FailReason:          "",
-		IsDeleted:           false,
-		CreatedUTCTime:      1111,
-		IndexFileKeys:       nil,
-		IndexSerializedSize: 1,
-	})
-	segIdx10 := typeutil.NewConcurrentMap[UniqueID, *model.SegmentIndex]()
-	segIdx10.Insert(meta.IndexID, &model.SegmentIndex{
-		SegmentID:           meta.SegID + 10,
-		CollectionID:        meta.CollID,
-		PartitionID:         meta.PartID,
-		NumRows:             500,
-		IndexID:             meta.IndexID,
-		BuildID:             meta.BuildID + 10,
-		NodeID:              meta.NodeID,
-		IndexVersion:        0,
-		IndexState:          commonpb.IndexState_Unissued,
-		FailReason:          "",
-		IsDeleted:           false,
-		CreatedUTCTime:      1111,
-		IndexFileKeys:       nil,
-		IndexSerializedSize: 1,
-	})
-	segIndexes.Insert(meta.SegID, segIdx0)
-	segIndexes.Insert(meta.SegID+1, segIdx1)
-	segIndexes.Insert(meta.SegID+2, segIdx2)
-	segIndexes.Insert(meta.SegID+3, segIdx3)
-	segIndexes.Insert(meta.SegID+4, segIdx4)
-	segIndexes.Insert(meta.SegID+5, segIdx5)
-	segIndexes.Insert(meta.SegID+6, segIdx6)
-	segIndexes.Insert(meta.SegID+7, segIdx7)
-	segIndexes.Insert(meta.SegID+8, segIdx8)
-	segIndexes.Insert(meta.SegID+9, segIdx9)
-	segIndexes.Insert(meta.SegID+10, segIdx10)
-
-	return &IndexMeta{
-		Catalog: catalog,
-		KeyLock: lock.NewKeyLock[UniqueID](),
-		Indexes: map[UniqueID]map[UniqueID]*model.Index{
-			meta.CollID: {
-				meta.IndexID: {
-					TenantID:     "",
-					CollectionID: meta.CollID,
-					FieldID:      meta.FieldID,
-					IndexID:      meta.IndexID,
-					IndexName:    meta.IndexName,
-					IsDeleted:    false,
-					CreateTime:   1,
-					TypeParams: []*commonpb.KeyValuePair{
-						{
-							Key:   common.DimKey,
-							Value: "128",
-						},
+	return NewIndexMetaForTest(catalog, map[UniqueID]map[UniqueID]*model.Index{
+		meta.CollID: {
+			meta.IndexID: {
+				TenantID:     "",
+				CollectionID: meta.CollID,
+				FieldID:      meta.FieldID,
+				IndexID:      meta.IndexID,
+				IndexName:    meta.IndexName,
+				IsDeleted:    false,
+				CreateTime:   1,
+				TypeParams: []*commonpb.KeyValuePair{
+					{
+						Key:   common.DimKey,
+						Value: "128",
 					},
-					IndexParams: []*commonpb.KeyValuePair{
-						{
-							Key:   common.IndexTypeKey,
-							Value: "HNSW",
-						},
-						{
-							Key:   common.MetricTypeKey,
-							Value: "L2",
-						},
+				},
+				IndexParams: []*commonpb.KeyValuePair{
+					{
+						Key:   common.IndexTypeKey,
+						Value: "HNSW",
+					},
+					{
+						Key:   common.MetricTypeKey,
+						Value: "L2",
 					},
 				},
 			},
 		},
-		SegmentIndexes:   segIndexes,
-		SegmentBuildInfo: indexBuildInfo,
-	}
+	}, []*model.SegmentIndex{
+		{
+			SegmentID:           meta.SegID,
+			CollectionID:        meta.CollID,
+			PartitionID:         meta.PartID,
+			NumRows:             1025,
+			IndexID:             meta.IndexID,
+			BuildID:             meta.BuildID,
+			NodeID:              0,
+			IndexVersion:        0,
+			IndexState:          commonpb.IndexState_Unissued,
+			FailReason:          "",
+			IsDeleted:           false,
+			CreatedUTCTime:      0,
+			IndexFileKeys:       nil,
+			IndexSerializedSize: 1,
+		},
+		{
+			SegmentID:           meta.SegID + 1,
+			CollectionID:        meta.CollID,
+			PartitionID:         meta.PartID,
+			NumRows:             1026,
+			IndexID:             meta.IndexID,
+			BuildID:             meta.BuildID + 1,
+			NodeID:              meta.NodeID,
+			IndexVersion:        1,
+			IndexState:          commonpb.IndexState_InProgress,
+			FailReason:          "",
+			IsDeleted:           false,
+			CreatedUTCTime:      1111,
+			IndexFileKeys:       nil,
+			IndexSerializedSize: 1,
+		},
+		{
+			SegmentID:           meta.SegID + 2,
+			CollectionID:        meta.CollID,
+			PartitionID:         meta.PartID,
+			NumRows:             1026,
+			IndexID:             meta.IndexID,
+			BuildID:             meta.BuildID + 2,
+			NodeID:              meta.NodeID,
+			IndexVersion:        1,
+			IndexState:          commonpb.IndexState_InProgress,
+			FailReason:          "",
+			IsDeleted:           true,
+			CreatedUTCTime:      1111,
+			IndexFileKeys:       nil,
+			IndexSerializedSize: 1,
+		},
+		{
+			SegmentID:           meta.SegID + 3,
+			CollectionID:        meta.CollID,
+			PartitionID:         meta.PartID,
+			NumRows:             500,
+			IndexID:             meta.IndexID,
+			BuildID:             meta.BuildID + 3,
+			NodeID:              0,
+			IndexVersion:        0,
+			IndexState:          commonpb.IndexState_Unissued,
+			FailReason:          "",
+			IsDeleted:           false,
+			CreatedUTCTime:      1111,
+			IndexFileKeys:       nil,
+			IndexSerializedSize: 1,
+		},
+		{
+			SegmentID:           meta.SegID + 4,
+			CollectionID:        meta.CollID,
+			PartitionID:         meta.PartID,
+			NumRows:             1026,
+			IndexID:             meta.IndexID,
+			BuildID:             meta.BuildID + 4,
+			NodeID:              meta.NodeID,
+			IndexVersion:        1,
+			IndexState:          commonpb.IndexState_Finished,
+			FailReason:          "",
+			IsDeleted:           false,
+			CreatedUTCTime:      1111,
+			IndexFileKeys:       nil,
+			IndexSerializedSize: 1,
+		},
+		{
+			SegmentID:           meta.SegID + 5,
+			CollectionID:        meta.CollID,
+			PartitionID:         meta.PartID,
+			NumRows:             1026,
+			IndexID:             meta.IndexID,
+			BuildID:             meta.BuildID + 5,
+			NodeID:              0,
+			IndexVersion:        1,
+			IndexState:          commonpb.IndexState_Finished,
+			FailReason:          "",
+			IsDeleted:           false,
+			CreatedUTCTime:      1111,
+			IndexFileKeys:       nil,
+			IndexSerializedSize: 1,
+		},
+		{
+			SegmentID:           meta.SegID + 6,
+			CollectionID:        meta.CollID,
+			PartitionID:         meta.PartID,
+			NumRows:             1026,
+			IndexID:             meta.IndexID,
+			BuildID:             meta.BuildID + 6,
+			NodeID:              0,
+			IndexVersion:        1,
+			IndexState:          commonpb.IndexState_Finished,
+			FailReason:          "",
+			IsDeleted:           false,
+			CreatedUTCTime:      1111,
+			IndexFileKeys:       nil,
+			IndexSerializedSize: 1,
+		},
+		{
+			SegmentID:           meta.SegID + 7,
+			CollectionID:        meta.CollID,
+			PartitionID:         meta.PartID,
+			NumRows:             1026,
+			IndexID:             meta.IndexID,
+			BuildID:             meta.BuildID + 7,
+			NodeID:              0,
+			IndexVersion:        1,
+			IndexState:          commonpb.IndexState_Failed,
+			FailReason:          "error",
+			IsDeleted:           false,
+			CreatedUTCTime:      1111,
+			IndexFileKeys:       nil,
+			IndexSerializedSize: 1,
+		},
+		{
+			SegmentID:           meta.SegID + 8,
+			CollectionID:        meta.CollID,
+			PartitionID:         meta.PartID,
+			NumRows:             1026,
+			IndexID:             meta.IndexID,
+			BuildID:             meta.BuildID + 8,
+			NodeID:              meta.NodeID + 1,
+			IndexVersion:        1,
+			IndexState:          commonpb.IndexState_InProgress,
+			FailReason:          "",
+			IsDeleted:           false,
+			CreatedUTCTime:      1111,
+			IndexFileKeys:       nil,
+			IndexSerializedSize: 1,
+		},
+		{
+			SegmentID:           meta.SegID + 9,
+			CollectionID:        meta.CollID,
+			PartitionID:         meta.PartID,
+			NumRows:             500,
+			IndexID:             meta.IndexID,
+			BuildID:             meta.BuildID + 9,
+			NodeID:              0,
+			IndexVersion:        0,
+			IndexState:          commonpb.IndexState_Unissued,
+			FailReason:          "",
+			IsDeleted:           false,
+			CreatedUTCTime:      1111,
+			IndexFileKeys:       nil,
+			IndexSerializedSize: 1,
+		},
+		{
+			SegmentID:           meta.SegID + 10,
+			CollectionID:        meta.CollID,
+			PartitionID:         meta.PartID,
+			NumRows:             500,
+			IndexID:             meta.IndexID,
+			BuildID:             meta.BuildID + 10,
+			NodeID:              meta.NodeID,
+			IndexVersion:        0,
+			IndexState:          commonpb.IndexState_Unissued,
+			FailReason:          "",
+			IsDeleted:           false,
+			CreatedUTCTime:      1111,
+			IndexFileKeys:       nil,
+			IndexSerializedSize: 1,
+		},
+	}...)
 }
 
 func createIndexMetaWithSegment(catalog metastore.DataCoordCatalog,
 	collID, partID, segID, indexID, fieldID, buildID UniqueID,
 ) *IndexMeta {
-	tasks := typeutil.NewConcurrentMap[UniqueID, *model.SegmentIndex]()
 	indexTask := &model.SegmentIndex{
 		CollectionID: collID,
 		PartitionID:  partID,
@@ -475,27 +256,20 @@ func createIndexMetaWithSegment(catalog metastore.DataCoordCatalog,
 		FailReason:   "",
 		NumRows:      1025,
 	}
-	tasks.Insert(indexID, indexTask)
-	im := &IndexMeta{
-		Catalog: catalog,
-		KeyLock: lock.NewKeyLock[UniqueID](),
-		Indexes: map[UniqueID]map[UniqueID]*model.Index{
-			collID: {indexID: {
-				IndexID:   indexID,
-				FieldID:   fieldID,
-				IndexName: "default_index",
-				IndexParams: []*commonpb.KeyValuePair{
-					{Key: "index_type", Value: "HNSW"},
-				},
-				TypeParams: []*commonpb.KeyValuePair{
-					{Key: "dim", Value: "128"},
-				},
-			}},
-		},
-		SegmentIndexes:   typeutil.NewConcurrentMap[UniqueID, *typeutil.ConcurrentMap[UniqueID, *model.SegmentIndex]](),
-		SegmentBuildInfo: NewSegmentIndexBuildInfo(),
-	}
-	im.SegmentIndexes.Insert(segID, tasks)
+	im := NewIndexMetaForTest(catalog, map[UniqueID]map[UniqueID]*model.Index{
+		collID: {indexID: {
+			CollectionID: collID,
+			IndexID:      indexID,
+			FieldID:      fieldID,
+			IndexName:    "default_index",
+			IndexParams: []*commonpb.KeyValuePair{
+				{Key: "index_type", Value: "HNSW"},
+			},
+			TypeParams: []*commonpb.KeyValuePair{
+				{Key: "dim", Value: "128"},
+			},
+		}},
+	}, indexTask)
 	im.SegmentBuildInfo.Add(indexTask)
 	return im
 }
@@ -536,4 +310,28 @@ func setupManifestReloadMeta(t *testing.T) (*meta.Meta, *IndexTestMetas) {
 		IndexName:    "idx",
 	}))
 	return m, dm
+}
+
+// setCollectionIndexesForTest replaces every definition of collectionID with
+// indexes, as assigning im.Indexes[collectionID] used to.
+func setCollectionIndexesForTest(im *IndexMeta, collectionID UniqueID, indexes map[UniqueID]*model.Index) {
+	for _, index := range im.Store().GetIndexes(collectionID) {
+		im.Store().RemoveIndex(collectionID, index.IndexID)
+	}
+	for _, index := range indexes {
+		im.PutIndexesForTest(index)
+	}
+}
+
+// setIndexesForTest replaces every definition with indexes, as assigning
+// im.Indexes used to.
+func setIndexesForTest(im *IndexMeta, indexes map[UniqueID]map[UniqueID]*model.Index) {
+	for _, index := range im.Store().ListAllIndexes() {
+		im.Store().RemoveIndex(index.CollectionID, index.IndexID)
+	}
+	for _, collectionIndexes := range indexes {
+		for _, index := range collectionIndexes {
+			im.PutIndexesForTest(index)
+		}
+	}
 }

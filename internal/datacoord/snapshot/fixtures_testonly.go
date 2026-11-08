@@ -79,7 +79,7 @@ type SnapshotTestMetas struct {
 func loadSnapshotTestMetas(catalog metastore.DataCoordCatalog, cm storage.ChunkManager, out *SnapshotTestMetas) meta.DomainMetaLoader {
 	return func(ctx context.Context, collectionIDs []int64) (meta.SegmentIndexCatalog, meta.CompactionProtection, error) {
 		var err error
-		if out.IndexMeta, err = index.NewIndexMeta(ctx, catalog, collectionIDs); err != nil {
+		if out.IndexMeta, err = index.NewIndexMeta(ctx, catalog, metacache.NewMetaStore(nil), collectionIDs); err != nil {
 			return nil, nil, err
 		}
 		if out.AnalyzeMeta, err = analyze.NewAnalyzeMeta(ctx, catalog); err != nil {

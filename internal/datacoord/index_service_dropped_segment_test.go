@@ -33,7 +33,6 @@ import (
 	"github.com/milvus-io/milvus/internal/metastore/model"
 	"github.com/milvus-io/milvus/pkg/v3/proto/datapb"
 	"github.com/milvus-io/milvus/pkg/v3/proto/indexpb"
-	"github.com/milvus-io/milvus/pkg/v3/util/typeutil"
 )
 
 const (
@@ -61,15 +60,13 @@ func newDroppedSegmentRaceServer(t *testing.T) *Server {
 		domainMetas: domainMetas{indexMeta: im},
 	}
 	s.stateCode.Store(commonpb.StateCode_Healthy)
-	s.indexMeta.Indexes[droppedRaceCollID] = map[UniqueID]*model.Index{
-		droppedRaceIndexID: {
-			CollectionID: droppedRaceCollID,
-			FieldID:      droppedRaceFieldID,
-			IndexID:      droppedRaceIndexID,
-			IndexName:    "idx",
-			CreateTime:   droppedRaceCreateTS,
-		},
-	}
+	s.indexMeta.PutIndexesForTest(&model.Index{
+		CollectionID: droppedRaceCollID,
+		FieldID:      droppedRaceFieldID,
+		IndexID:      droppedRaceIndexID,
+		IndexName:    "idx",
+		CreateTime:   droppedRaceCreateTS,
+	})
 	for segID, state := range map[UniqueID]commonpb.IndexState{
 		droppedRaceLiveSeg: commonpb.IndexState_Finished,
 		droppedRaceDropSeg: commonpb.IndexState_InProgress,
@@ -82,8 +79,7 @@ func newDroppedSegmentRaceServer(t *testing.T) *Server {
 			State:          commonpb.SegmentState_Flushed,
 			LastExpireTime: droppedRaceCreateTS - 1,
 		}))
-		segIdx := typeutil.NewConcurrentMap[UniqueID, *model.SegmentIndex]()
-		segIdx.Insert(droppedRaceIndexID, &model.SegmentIndex{
+		s.indexMeta.PutSegmentIndexesForTest(&model.SegmentIndex{
 			SegmentID:    segID,
 			CollectionID: droppedRaceCollID,
 			PartitionID:  droppedRacePartID,
@@ -92,7 +88,6 @@ func newDroppedSegmentRaceServer(t *testing.T) *Server {
 			BuildID:      segID + 10000,
 			IndexState:   state,
 		})
-		s.indexMeta.SegmentIndexes.Insert(segID, segIdx)
 	}
 	return s
 }
@@ -106,8 +101,7 @@ func failIndexAfterSnapshot(segID UniqueID, dropSegment func()) *mockey.Mocker {
 	return mockey.Mock((*index.IndexMeta).GetSegmentsIndexStates).To(
 		func(m *index.IndexMeta, collectionID UniqueID, segmentIDs []UniqueID) map[int64]map[int64]*indexpb.SegmentIndexState {
 			dropSegment()
-			segIdx, _ := m.SegmentIndexes.Get(segID)
-			idx, _ := segIdx.Get(droppedRaceIndexID)
+			idx, _ := m.Store().GetSegmentIndex(segID, droppedRaceIndexID)
 			idx.IndexState = commonpb.IndexState_Failed
 			idx.FailReason = index.IndexTaskAbortReasonSegmentDropped
 			return origin(m, collectionID, segmentIDs)

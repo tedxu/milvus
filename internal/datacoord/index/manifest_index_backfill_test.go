@@ -111,7 +111,7 @@ func TestManifestIndexBackfillMovesCatalogRowAtomically(t *testing.T) {
 	m = BootMigrationMeta(t, catalog, meta.RestartCollID)
 	_, ok := m.IndexCatalog.(*IndexMeta).GetIndexJob(meta.RestartBuildID)
 	require.True(t, ok)
-	beforePublication, ok := m.IndexCatalog.(*IndexMeta).SegmentBuildInfo.Get(meta.RestartBuildID)
+	beforePublication, ok := m.IndexCatalog.(*IndexMeta).Store().GetSegmentIndexByBuildID(meta.RestartBuildID)
 	require.True(t, ok)
 	assert.False(t, IndexManifestPublished(t, m.IndexCatalog.(*IndexMeta), meta.RestartBuildID))
 

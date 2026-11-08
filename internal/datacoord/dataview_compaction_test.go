@@ -32,7 +32,6 @@ import (
 	"github.com/milvus-io/milvus/pkg/v3/proto/datapb"
 	"github.com/milvus-io/milvus/pkg/v3/proto/viewpb"
 	"github.com/milvus-io/milvus/pkg/v3/util/paramtable"
-	"github.com/milvus-io/milvus/pkg/v3/util/typeutil"
 )
 
 func compactionAdmissionMeta(t *testing.T) *meta.Meta {
@@ -80,13 +79,9 @@ func admissionRetire(m *meta.Meta, ids ...int64) {
 }
 
 func admissionFinishIndexes(m *meta.Meta, id int64, indexes ...int64) {
-	states, ok := m.IndexCatalog.(*index.IndexMeta).SegmentIndexes.Get(id)
-	if !ok {
-		states = typeutil.NewConcurrentMap[int64, *model.SegmentIndex]()
-		m.IndexCatalog.(*index.IndexMeta).SegmentIndexes.Insert(id, states)
-	}
+	im := m.IndexCatalog.(*index.IndexMeta)
 	for _, index := range indexes {
-		states.Insert(index, &model.SegmentIndex{CollectionID: 1, SegmentID: id, IndexID: index, IndexState: commonpb.IndexState_Finished})
+		im.PutSegmentIndexesForTest(&model.SegmentIndex{CollectionID: 1, SegmentID: id, IndexID: index, IndexState: commonpb.IndexState_Finished})
 	}
 }
 
@@ -135,7 +130,7 @@ func TestDataViewCompactionAdmissionAllOutputsAndAllIndexes(t *testing.T) {
 	after := admissionRecompute(t, m, 3, 4)
 	require.Equal(t, before.GetCompactVersion()+1, after.GetCompactVersion())
 	// Index DDL after admission must not resurrect the compacted ancestors.
-	m.IndexCatalog.(*index.IndexMeta).Indexes[1][13] = &model.Index{CollectionID: 1, FieldID: 3, IndexID: 13}
+	m.IndexCatalog.(*index.IndexMeta).PutIndexesForTest(&model.Index{CollectionID: 1, FieldID: 3, IndexID: 13})
 	require.Equal(t, after, admissionRecompute(t, m, 3, 4))
 	// Recovery receives the persisted admission frontier, too.
 	recovered, err := dataview.RecoverManager(t.Context(), m.Catalog.(dataview.Catalog), func(context.Context, int64) (bool, error) { return true, nil }, m.LoadableProjection, []int64{1}, map[int64][]string{1: {"v1"}})
@@ -199,7 +194,9 @@ func TestDataViewCompactionAdmissionMissingParentFailsClosed(t *testing.T) {
 
 func TestDataViewCompactionAdmissionNoIndexAndEmptyOutput(t *testing.T) {
 	m := compactionAdmissionMeta(t)
-	m.IndexCatalog.(*index.IndexMeta).Indexes[1] = nil
+	for _, idx := range m.IndexCatalog.(*index.IndexMeta).Store().GetIndexes(1) {
+		m.IndexCatalog.(*index.IndexMeta).Store().RemoveIndex(1, idx.IndexID)
+	}
 	m.Segments.SetSegment(1, admissionSegment(1))
 	before := admissionRecompute(t, m, 1)
 	child := admissionSegment(2, 1)

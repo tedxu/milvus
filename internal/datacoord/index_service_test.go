@@ -71,7 +71,6 @@ import (
 	"github.com/milvus-io/milvus/pkg/v3/util/merr"
 	"github.com/milvus-io/milvus/pkg/v3/util/retry"
 	"github.com/milvus-io/milvus/pkg/v3/util/tsoutil"
-	"github.com/milvus-io/milvus/pkg/v3/util/typeutil"
 )
 
 func initStreamingSystem(t *testing.T) {
@@ -336,14 +335,14 @@ func TestServer_CreateIndex(t *testing.T) {
 		alloc.EXPECT().AllocID(mock.Anything).Return(0, errors.New("mock")).Maybe()
 		alloc.EXPECT().AllocTimestamp(mock.Anything).Return(0, nil).Maybe()
 		s.allocator = alloc
-		s.indexMeta.Indexes = map[UniqueID]map[UniqueID]*model.Index{}
+		resetIndexesForTest(s.indexMeta)
 		resp, err := s.CreateIndex(ctx, req)
 		assert.Error(t, merr.CheckRPCCall(resp, err))
 	})
 
 	t.Run("disk index", func(t *testing.T) {
 		s.allocator = mock0Allocator
-		s.indexMeta.Indexes = map[UniqueID]map[UniqueID]*model.Index{}
+		resetIndexesForTest(s.indexMeta)
 		req.IndexParams = []*commonpb.KeyValuePair{
 			{
 				Key:   common.IndexTypeKey,
@@ -356,7 +355,7 @@ func TestServer_CreateIndex(t *testing.T) {
 
 	t.Run("disk index with mmap", func(t *testing.T) {
 		s.allocator = mock0Allocator
-		s.indexMeta.Indexes = map[UniqueID]map[UniqueID]*model.Index{}
+		resetIndexesForTest(s.indexMeta)
 		req.IndexParams = []*commonpb.KeyValuePair{
 			{
 				Key:   common.IndexTypeKey,
@@ -386,7 +385,7 @@ func TestServer_CreateIndex(t *testing.T) {
 			}
 			return nil
 		}).Maybe()
-		s.indexMeta.Indexes = map[UniqueID]map[UniqueID]*model.Index{}
+		resetIndexesForTest(s.indexMeta)
 		failCatalog := &datacoord.Catalog{MetaKv: metakv}
 		s.meta.Catalog = failCatalog
 		s.indexMeta.Catalog = failCatalog
@@ -405,7 +404,7 @@ func TestServer_CreateIndex(t *testing.T) {
 		s.meta.Catalog = catalog
 		s.indexMeta.Catalog = catalog
 		s.allocator = mock0Allocator
-		s.indexMeta.Indexes = map[UniqueID]map[UniqueID]*model.Index{}
+		resetIndexesForTest(s.indexMeta)
 
 		preservedIndexID := int64(12345)
 		req := &indexpb.CreateIndexRequest{
@@ -431,7 +430,7 @@ func TestServer_CreateIndex(t *testing.T) {
 	})
 
 	t.Run("preserve index ID with invalid ID (zero)", func(t *testing.T) {
-		s.indexMeta.Indexes = map[UniqueID]map[UniqueID]*model.Index{}
+		resetIndexesForTest(s.indexMeta)
 
 		req := &indexpb.CreateIndexRequest{
 			CollectionID:    collID,
@@ -452,7 +451,7 @@ func TestServer_CreateIndex(t *testing.T) {
 	})
 
 	t.Run("preserve index ID with invalid ID (negative)", func(t *testing.T) {
-		s.indexMeta.Indexes = map[UniqueID]map[UniqueID]*model.Index{}
+		resetIndexesForTest(s.indexMeta)
 
 		req := &indexpb.CreateIndexRequest{
 			CollectionID:    collID,
@@ -476,7 +475,7 @@ func TestServer_CreateIndex(t *testing.T) {
 		// Verify normal path still works (without PreserveIndexId)
 		s.meta.Catalog = catalog
 		s.indexMeta.Catalog = catalog
-		s.indexMeta.Indexes = map[UniqueID]map[UniqueID]*model.Index{}
+		resetIndexesForTest(s.indexMeta)
 
 		req := &indexpb.CreateIndexRequest{
 			CollectionID:    collID,
@@ -543,100 +542,96 @@ func TestServer_AlterIndex(t *testing.T) {
 
 	mock0Allocator := meta.NewMockAllocator(t)
 
-	indexMeta := &index.IndexMeta{
-		Catalog: catalog,
-		Indexes: map[UniqueID]map[UniqueID]*model.Index{
-			collID: {
-				// finished
-				indexID: {
-					TenantID:        "",
-					CollectionID:    collID,
-					FieldID:         fieldID,
-					IndexID:         indexID,
-					IndexName:       indexName,
-					IsDeleted:       false,
-					CreateTime:      createTS,
-					TypeParams:      typeParams,
-					IndexParams:     indexParams,
-					IsAutoIndex:     false,
-					UserIndexParams: nil,
-				},
-				// deleted
-				indexID + 1: {
-					TenantID:        "",
-					CollectionID:    collID,
-					FieldID:         fieldID + 1,
-					IndexID:         indexID + 1,
-					IndexName:       indexName + "_1",
-					IsDeleted:       true,
-					CreateTime:      createTS,
-					TypeParams:      typeParams,
-					IndexParams:     indexParams,
-					IsAutoIndex:     false,
-					UserIndexParams: nil,
-				},
-				// unissued
-				indexID + 2: {
-					TenantID:        "",
-					CollectionID:    collID,
-					FieldID:         fieldID + 2,
-					IndexID:         indexID + 2,
-					IndexName:       indexName + "_2",
-					IsDeleted:       false,
-					CreateTime:      createTS,
-					TypeParams:      typeParams,
-					IndexParams:     indexParams,
-					IsAutoIndex:     false,
-					UserIndexParams: nil,
-				},
-				// inProgress
-				indexID + 3: {
-					TenantID:        "",
-					CollectionID:    collID,
-					FieldID:         fieldID + 3,
-					IndexID:         indexID + 3,
-					IndexName:       indexName + "_3",
-					IsDeleted:       false,
-					CreateTime:      createTS,
-					TypeParams:      typeParams,
-					IndexParams:     indexParams,
-					IsAutoIndex:     false,
-					UserIndexParams: nil,
-				},
-				// failed
-				indexID + 4: {
-					TenantID:        "",
-					CollectionID:    collID,
-					FieldID:         fieldID + 4,
-					IndexID:         indexID + 4,
-					IndexName:       indexName + "_4",
-					IsDeleted:       false,
-					CreateTime:      createTS,
-					TypeParams:      typeParams,
-					IndexParams:     indexParams,
-					IsAutoIndex:     false,
-					UserIndexParams: nil,
-				},
-				// unissued
-				indexID + 5: {
-					TenantID:        "",
-					CollectionID:    collID,
-					FieldID:         fieldID + 5,
-					IndexID:         indexID + 5,
-					IndexName:       indexName + "_5",
-					IsDeleted:       false,
-					CreateTime:      createTS,
-					TypeParams:      typeParams,
-					IndexParams:     indexParams,
-					IsAutoIndex:     false,
-					UserIndexParams: nil,
-				},
+	indexMeta := index.NewIndexMetaForTest(catalog, map[UniqueID]map[UniqueID]*model.Index{
+		collID: {
+			// finished
+			indexID: {
+				TenantID:        "",
+				CollectionID:    collID,
+				FieldID:         fieldID,
+				IndexID:         indexID,
+				IndexName:       indexName,
+				IsDeleted:       false,
+				CreateTime:      createTS,
+				TypeParams:      typeParams,
+				IndexParams:     indexParams,
+				IsAutoIndex:     false,
+				UserIndexParams: nil,
+			},
+			// deleted
+			indexID + 1: {
+				TenantID:        "",
+				CollectionID:    collID,
+				FieldID:         fieldID + 1,
+				IndexID:         indexID + 1,
+				IndexName:       indexName + "_1",
+				IsDeleted:       true,
+				CreateTime:      createTS,
+				TypeParams:      typeParams,
+				IndexParams:     indexParams,
+				IsAutoIndex:     false,
+				UserIndexParams: nil,
+			},
+			// unissued
+			indexID + 2: {
+				TenantID:        "",
+				CollectionID:    collID,
+				FieldID:         fieldID + 2,
+				IndexID:         indexID + 2,
+				IndexName:       indexName + "_2",
+				IsDeleted:       false,
+				CreateTime:      createTS,
+				TypeParams:      typeParams,
+				IndexParams:     indexParams,
+				IsAutoIndex:     false,
+				UserIndexParams: nil,
+			},
+			// inProgress
+			indexID + 3: {
+				TenantID:        "",
+				CollectionID:    collID,
+				FieldID:         fieldID + 3,
+				IndexID:         indexID + 3,
+				IndexName:       indexName + "_3",
+				IsDeleted:       false,
+				CreateTime:      createTS,
+				TypeParams:      typeParams,
+				IndexParams:     indexParams,
+				IsAutoIndex:     false,
+				UserIndexParams: nil,
+			},
+			// failed
+			indexID + 4: {
+				TenantID:        "",
+				CollectionID:    collID,
+				FieldID:         fieldID + 4,
+				IndexID:         indexID + 4,
+				IndexName:       indexName + "_4",
+				IsDeleted:       false,
+				CreateTime:      createTS,
+				TypeParams:      typeParams,
+				IndexParams:     indexParams,
+				IsAutoIndex:     false,
+				UserIndexParams: nil,
+			},
+			// unissued
+			indexID + 5: {
+				TenantID:        "",
+				CollectionID:    collID,
+				FieldID:         fieldID + 5,
+				IndexID:         indexID + 5,
+				IndexName:       indexName + "_5",
+				IsDeleted:       false,
+				CreateTime:      createTS,
+				TypeParams:      typeParams,
+				IndexParams:     indexParams,
+				IsAutoIndex:     false,
+				UserIndexParams: nil,
 			},
 		},
-		SegmentIndexes: typeutil.NewConcurrentMap[UniqueID, *typeutil.ConcurrentMap[UniqueID, *model.SegmentIndex]](),
-	}
-	segIdx1 := typeutil.NewConcurrentMap[UniqueID, *model.SegmentIndex]()
-	segIdx1.Insert(indexID, &model.SegmentIndex{
+	})
+	var segIdx1 []*model.SegmentIndex
+	segIdx1 = append(segIdx1, &model.SegmentIndex{
 		SegmentID:           segID,
 		CollectionID:        collID,
 		PartitionID:         partID,
@@ -653,7 +648,7 @@ func TestServer_AlterIndex(t *testing.T) {
 		IndexSerializedSize: 0,
 		WriteHandoff:        false,
 	})
-	segIdx1.Insert(indexID+1, &model.SegmentIndex{
+	segIdx1 = append(segIdx1, &model.SegmentIndex{
 		SegmentID:           segID,
 		CollectionID:        collID,
 		PartitionID:         partID,
@@ -670,7 +665,7 @@ func TestServer_AlterIndex(t *testing.T) {
 		IndexSerializedSize: 0,
 		WriteHandoff:        false,
 	})
-	segIdx1.Insert(indexID+3, &model.SegmentIndex{
+	segIdx1 = append(segIdx1, &model.SegmentIndex{
 		SegmentID:           segID,
 		CollectionID:        collID,
 		PartitionID:         partID,
@@ -687,7 +682,7 @@ func TestServer_AlterIndex(t *testing.T) {
 		IndexSerializedSize: 0,
 		WriteHandoff:        false,
 	})
-	segIdx1.Insert(indexID+4, &model.SegmentIndex{
+	segIdx1 = append(segIdx1, &model.SegmentIndex{
 		SegmentID:           segID,
 		CollectionID:        collID,
 		PartitionID:         partID,
@@ -704,7 +699,7 @@ func TestServer_AlterIndex(t *testing.T) {
 		IndexSerializedSize: 0,
 		WriteHandoff:        false,
 	})
-	segIdx1.Insert(indexID+5, &model.SegmentIndex{
+	segIdx1 = append(segIdx1, &model.SegmentIndex{
 		SegmentID:           segID,
 		CollectionID:        collID,
 		PartitionID:         partID,
@@ -721,10 +716,10 @@ func TestServer_AlterIndex(t *testing.T) {
 		IndexSerializedSize: 0,
 		WriteHandoff:        false,
 	})
-	indexMeta.SegmentIndexes.Insert(segID, segIdx1)
+	indexMeta.PutSegmentIndexesForTest(segIdx1...)
 
-	segIdx2 := typeutil.NewConcurrentMap[UniqueID, *model.SegmentIndex]()
-	segIdx2.Insert(indexID, &model.SegmentIndex{
+	var segIdx2 []*model.SegmentIndex
+	segIdx2 = append(segIdx2, &model.SegmentIndex{
 		SegmentID:      segID - 1,
 		CollectionID:   collID,
 		PartitionID:    partID,
@@ -736,7 +731,7 @@ func TestServer_AlterIndex(t *testing.T) {
 		IndexState:     commonpb.IndexState_Finished,
 		CreatedUTCTime: createTS,
 	})
-	segIdx2.Insert(indexID+1, &model.SegmentIndex{
+	segIdx2 = append(segIdx2, &model.SegmentIndex{
 		SegmentID:      segID - 1,
 		CollectionID:   collID,
 		PartitionID:    partID,
@@ -748,7 +743,7 @@ func TestServer_AlterIndex(t *testing.T) {
 		IndexState:     commonpb.IndexState_Finished,
 		CreatedUTCTime: createTS,
 	})
-	segIdx2.Insert(indexID+3, &model.SegmentIndex{
+	segIdx2 = append(segIdx2, &model.SegmentIndex{
 		SegmentID:      segID - 1,
 		CollectionID:   collID,
 		PartitionID:    partID,
@@ -760,7 +755,7 @@ func TestServer_AlterIndex(t *testing.T) {
 		IndexState:     commonpb.IndexState_InProgress,
 		CreatedUTCTime: createTS,
 	})
-	segIdx2.Insert(indexID+4, &model.SegmentIndex{
+	segIdx2 = append(segIdx2, &model.SegmentIndex{
 		SegmentID:      segID - 1,
 		CollectionID:   collID,
 		PartitionID:    partID,
@@ -773,7 +768,7 @@ func TestServer_AlterIndex(t *testing.T) {
 		FailReason:     "mock failed",
 		CreatedUTCTime: createTS,
 	})
-	segIdx2.Insert(indexID+5, &model.SegmentIndex{
+	segIdx2 = append(segIdx2, &model.SegmentIndex{
 		SegmentID:      segID - 1,
 		CollectionID:   collID,
 		PartitionID:    partID,
@@ -785,7 +780,7 @@ func TestServer_AlterIndex(t *testing.T) {
 		IndexState:     commonpb.IndexState_Finished,
 		CreatedUTCTime: createTS,
 	})
-	indexMeta.SegmentIndexes.Insert(segID-1, segIdx2)
+	indexMeta.PutSegmentIndexesForTest(segIdx2...)
 
 	mockHandler := meta.NewNMockHandler(t)
 
@@ -1033,27 +1028,23 @@ func TestServer_GetIndexState(t *testing.T) {
 		},
 	}
 	stateStore1 := metacache.NewMetaStore(&datacoord.Catalog{MetaKv: mockkv.NewMetaKv(t)})
-	im = &index.IndexMeta{
-		Catalog: &datacoord.Catalog{MetaKv: mockkv.NewMetaKv(t)},
-		Indexes: map[UniqueID]map[UniqueID]*model.Index{
-			collID: {
-				indexID: {
-					TenantID:        "",
-					CollectionID:    collID,
-					FieldID:         fieldID,
-					IndexID:         indexID,
-					IndexName:       indexName,
-					IsDeleted:       false,
-					CreateTime:      createTS,
-					TypeParams:      typeParams,
-					IndexParams:     indexParams,
-					IsAutoIndex:     false,
-					UserIndexParams: nil,
-				},
+	im = index.NewIndexMetaForTest(&datacoord.Catalog{MetaKv: mockkv.NewMetaKv(t)}, map[UniqueID]map[UniqueID]*model.Index{
+		collID: {
+			indexID: {
+				TenantID:        "",
+				CollectionID:    collID,
+				FieldID:         fieldID,
+				IndexID:         indexID,
+				IndexName:       indexName,
+				IsDeleted:       false,
+				CreateTime:      createTS,
+				TypeParams:      typeParams,
+				IndexParams:     indexParams,
+				IsAutoIndex:     false,
+				UserIndexParams: nil,
 			},
 		},
-		SegmentIndexes: typeutil.NewConcurrentMap[UniqueID, *typeutil.ConcurrentMap[UniqueID, *model.SegmentIndex]](),
-	}
+	})
 	s.meta = &meta.Meta{
 		MetaStore: stateStore1,
 		Segments:  meta.NewSegmentsInfo(stateStore1),
@@ -1093,33 +1084,30 @@ func TestServer_GetIndexState(t *testing.T) {
 		},
 	}
 	stateStore2 := metacache.NewMetaStore(&datacoord.Catalog{MetaKv: mockkv.NewMetaKv(t)})
-	im = &index.IndexMeta{
-		Indexes: map[UniqueID]map[UniqueID]*model.Index{
-			collID: {
-				indexID: {
-					TenantID:        "",
-					CollectionID:    collID,
-					FieldID:         fieldID,
-					IndexID:         indexID,
-					IndexName:       indexName,
-					IsDeleted:       false,
-					CreateTime:      createTS,
-					TypeParams:      typeParams,
-					IndexParams:     indexParams,
-					IsAutoIndex:     false,
-					UserIndexParams: nil,
-				},
+	im = index.NewIndexMetaForTest(nil, map[UniqueID]map[UniqueID]*model.Index{
+		collID: {
+			indexID: {
+				TenantID:        "",
+				CollectionID:    collID,
+				FieldID:         fieldID,
+				IndexID:         indexID,
+				IndexName:       indexName,
+				IsDeleted:       false,
+				CreateTime:      createTS,
+				TypeParams:      typeParams,
+				IndexParams:     indexParams,
+				IsAutoIndex:     false,
+				UserIndexParams: nil,
 			},
 		},
-		SegmentIndexes: typeutil.NewConcurrentMap[UniqueID, *typeutil.ConcurrentMap[UniqueID, *model.SegmentIndex]](),
-	}
+	})
 	s.meta = &meta.Meta{
 		MetaStore: stateStore2,
 		Segments:  meta.NewSegmentsInfo(stateStore2),
 	}
 	s.indexMeta = im
-	segIdx := typeutil.NewConcurrentMap[UniqueID, *model.SegmentIndex]()
-	segIdx.Insert(indexID, &model.SegmentIndex{
+	var segIdx []*model.SegmentIndex
+	segIdx = append(segIdx, &model.SegmentIndex{
 		SegmentID:           segID,
 		CollectionID:        collID,
 		PartitionID:         partID,
@@ -1136,7 +1124,7 @@ func TestServer_GetIndexState(t *testing.T) {
 		IndexSerializedSize: 0,
 		WriteHandoff:        false,
 	})
-	s.indexMeta.SegmentIndexes.Insert(segID, segIdx)
+	s.indexMeta.PutSegmentIndexesForTest(segIdx...)
 	for id, segment := range segments {
 		s.meta.Segments.SetSegment(id, segment)
 	}
@@ -1149,7 +1137,7 @@ func TestServer_GetIndexState(t *testing.T) {
 	})
 
 	t.Run("ambiguous index name", func(t *testing.T) {
-		s.indexMeta.Indexes[collID][indexID+1] = &model.Index{
+		s.indexMeta.PutIndexesForTest(&model.Index{
 			TenantID:        "",
 			CollectionID:    collID,
 			IndexID:         indexID + 1,
@@ -1160,7 +1148,7 @@ func TestServer_GetIndexState(t *testing.T) {
 			IndexParams:     indexParams,
 			IsAutoIndex:     false,
 			UserIndexParams: nil,
-		}
+		})
 		resp, err := s.GetIndexState(ctx, req)
 		assert.NoError(t, err)
 		assert.Equal(t, commonpb.ErrorCode_UnexpectedError, resp.GetStatus().GetErrorCode())
@@ -1226,8 +1214,9 @@ func TestServer_GetSegmentIndexState(t *testing.T) {
 	})
 
 	t.Run("unfinished", func(t *testing.T) {
-		s.indexMeta.Indexes[collID] = map[UniqueID]*model.Index{
-			indexID: {
+		resetCollectionIndexesForTest(s.indexMeta, collID)
+		s.indexMeta.PutIndexesForTest(
+			&model.Index{
 				TenantID:        "",
 				CollectionID:    collID,
 				FieldID:         fieldID,
@@ -1240,7 +1229,7 @@ func TestServer_GetSegmentIndexState(t *testing.T) {
 				IsAutoIndex:     false,
 				UserIndexParams: nil,
 			},
-		}
+		)
 		s.indexMeta.UpdateSegmentIndex(&model.SegmentIndex{
 			SegmentID:           segID,
 			CollectionID:        collID,
@@ -1358,8 +1347,9 @@ func TestServer_GetIndexBuildProgress(t *testing.T) {
 	})
 
 	t.Run("unissued", func(t *testing.T) {
-		s.indexMeta.Indexes[collID] = map[UniqueID]*model.Index{
-			indexID: {
+		resetCollectionIndexesForTest(s.indexMeta, collID)
+		s.indexMeta.PutIndexesForTest(
+			&model.Index{
 				TenantID:        "",
 				CollectionID:    collID,
 				FieldID:         fieldID,
@@ -1372,7 +1362,7 @@ func TestServer_GetIndexBuildProgress(t *testing.T) {
 				IsAutoIndex:     false,
 				UserIndexParams: nil,
 			},
-		}
+		)
 		s.meta.Segments = meta.NewSegmentsInfo(metacache.NewMetaStore(nil))
 		s.meta.Segments.SetSegment(segID, &meta.SegmentInfo{
 			SegmentInfo: &datapb.SegmentInfo{
@@ -1450,8 +1440,9 @@ func TestServer_GetIndexBuildProgress(t *testing.T) {
 	})
 
 	t.Run("multiple index", func(t *testing.T) {
-		s.indexMeta.Indexes[collID] = map[UniqueID]*model.Index{
-			indexID: {
+		resetCollectionIndexesForTest(s.indexMeta, collID)
+		s.indexMeta.PutIndexesForTest(
+			&model.Index{
 				TenantID:        "",
 				CollectionID:    collID,
 				FieldID:         fieldID,
@@ -1464,7 +1455,7 @@ func TestServer_GetIndexBuildProgress(t *testing.T) {
 				IsAutoIndex:     false,
 				UserIndexParams: nil,
 			},
-			indexID + 1: {
+			&model.Index{
 				TenantID:        "",
 				CollectionID:    collID,
 				FieldID:         fieldID + 1,
@@ -1477,7 +1468,7 @@ func TestServer_GetIndexBuildProgress(t *testing.T) {
 				IsAutoIndex:     false,
 				UserIndexParams: nil,
 			},
-		}
+		)
 		resp, err := s.GetIndexBuildProgress(ctx, req)
 		assert.NoError(t, err)
 		assert.Equal(t, commonpb.ErrorCode_UnexpectedError, resp.GetStatus().GetErrorCode())
@@ -1577,98 +1568,94 @@ func TestServer_DescribeIndex(t *testing.T) {
 	}
 
 	b := broker.NewMockBroker(t)
-	im := &index.IndexMeta{
-		Catalog: catalog,
-		Indexes: map[UniqueID]map[UniqueID]*model.Index{
-			collID: {
-				// finished
-				indexID: {
-					TenantID:        "",
-					CollectionID:    collID,
-					FieldID:         fieldID,
-					IndexID:         indexID,
-					IndexName:       indexName,
-					IsDeleted:       false,
-					CreateTime:      createTS,
-					TypeParams:      typeParams,
-					IndexParams:     indexParams,
-					IsAutoIndex:     false,
-					UserIndexParams: nil,
-				},
-				// deleted
-				indexID + 1: {
-					TenantID:        "",
-					CollectionID:    collID,
-					FieldID:         fieldID + 1,
-					IndexID:         indexID + 1,
-					IndexName:       indexName + "_1",
-					IsDeleted:       true,
-					CreateTime:      createTS,
-					TypeParams:      typeParams,
-					IndexParams:     indexParams,
-					IsAutoIndex:     false,
-					UserIndexParams: nil,
-				},
-				// unissued
-				indexID + 2: {
-					TenantID:        "",
-					CollectionID:    collID,
-					FieldID:         fieldID + 2,
-					IndexID:         indexID + 2,
-					IndexName:       indexName + "_2",
-					IsDeleted:       false,
-					CreateTime:      createTS,
-					TypeParams:      typeParams,
-					IndexParams:     indexParams,
-					IsAutoIndex:     false,
-					UserIndexParams: nil,
-				},
-				// inProgress
-				indexID + 3: {
-					TenantID:        "",
-					CollectionID:    collID,
-					FieldID:         fieldID + 3,
-					IndexID:         indexID + 3,
-					IndexName:       indexName + "_3",
-					IsDeleted:       false,
-					CreateTime:      createTS,
-					TypeParams:      typeParams,
-					IndexParams:     indexParams,
-					IsAutoIndex:     false,
-					UserIndexParams: nil,
-				},
-				// failed
-				indexID + 4: {
-					TenantID:        "",
-					CollectionID:    collID,
-					FieldID:         fieldID + 4,
-					IndexID:         indexID + 4,
-					IndexName:       indexName + "_4",
-					IsDeleted:       false,
-					CreateTime:      createTS,
-					TypeParams:      typeParams,
-					IndexParams:     indexParams,
-					IsAutoIndex:     false,
-					UserIndexParams: nil,
-				},
-				// unissued
-				indexID + 5: {
-					TenantID:        "",
-					CollectionID:    collID,
-					FieldID:         fieldID + 5,
-					IndexID:         indexID + 5,
-					IndexName:       indexName + "_5",
-					IsDeleted:       false,
-					CreateTime:      createTS,
-					TypeParams:      typeParams,
-					IndexParams:     indexParams,
-					IsAutoIndex:     false,
-					UserIndexParams: nil,
-				},
+	im := index.NewIndexMetaForTest(catalog, map[UniqueID]map[UniqueID]*model.Index{
+		collID: {
+			// finished
+			indexID: {
+				TenantID:        "",
+				CollectionID:    collID,
+				FieldID:         fieldID,
+				IndexID:         indexID,
+				IndexName:       indexName,
+				IsDeleted:       false,
+				CreateTime:      createTS,
+				TypeParams:      typeParams,
+				IndexParams:     indexParams,
+				IsAutoIndex:     false,
+				UserIndexParams: nil,
+			},
+			// deleted
+			indexID + 1: {
+				TenantID:        "",
+				CollectionID:    collID,
+				FieldID:         fieldID + 1,
+				IndexID:         indexID + 1,
+				IndexName:       indexName + "_1",
+				IsDeleted:       true,
+				CreateTime:      createTS,
+				TypeParams:      typeParams,
+				IndexParams:     indexParams,
+				IsAutoIndex:     false,
+				UserIndexParams: nil,
+			},
+			// unissued
+			indexID + 2: {
+				TenantID:        "",
+				CollectionID:    collID,
+				FieldID:         fieldID + 2,
+				IndexID:         indexID + 2,
+				IndexName:       indexName + "_2",
+				IsDeleted:       false,
+				CreateTime:      createTS,
+				TypeParams:      typeParams,
+				IndexParams:     indexParams,
+				IsAutoIndex:     false,
+				UserIndexParams: nil,
+			},
+			// inProgress
+			indexID + 3: {
+				TenantID:        "",
+				CollectionID:    collID,
+				FieldID:         fieldID + 3,
+				IndexID:         indexID + 3,
+				IndexName:       indexName + "_3",
+				IsDeleted:       false,
+				CreateTime:      createTS,
+				TypeParams:      typeParams,
+				IndexParams:     indexParams,
+				IsAutoIndex:     false,
+				UserIndexParams: nil,
+			},
+			// failed
+			indexID + 4: {
+				TenantID:        "",
+				CollectionID:    collID,
+				FieldID:         fieldID + 4,
+				IndexID:         indexID + 4,
+				IndexName:       indexName + "_4",
+				IsDeleted:       false,
+				CreateTime:      createTS,
+				TypeParams:      typeParams,
+				IndexParams:     indexParams,
+				IsAutoIndex:     false,
+				UserIndexParams: nil,
+			},
+			// unissued
+			indexID + 5: {
+				TenantID:        "",
+				CollectionID:    collID,
+				FieldID:         fieldID + 5,
+				IndexID:         indexID + 5,
+				IndexName:       indexName + "_5",
+				IsDeleted:       false,
+				CreateTime:      createTS,
+				TypeParams:      typeParams,
+				IndexParams:     indexParams,
+				IsAutoIndex:     false,
+				UserIndexParams: nil,
 			},
 		},
-		SegmentIndexes: typeutil.NewConcurrentMap[UniqueID, *typeutil.ConcurrentMap[UniqueID, *model.SegmentIndex]](),
-	}
+	})
 	s := &Server{
 		meta: &meta.Meta{
 			MetaStore: metacache.NewMetaStore(catalog),
@@ -1682,8 +1669,8 @@ func TestServer_DescribeIndex(t *testing.T) {
 		broker:          b,
 	}
 	seedCollections(s, &meta.CollectionInfo{ID: collID, DatabaseName: "test_db", Schema: &schemapb.CollectionSchema{Name: "test_collection"}})
-	segIdx1 := typeutil.NewConcurrentMap[UniqueID, *model.SegmentIndex]()
-	segIdx1.Insert(indexID, &model.SegmentIndex{
+	var segIdx1 []*model.SegmentIndex
+	segIdx1 = append(segIdx1, &model.SegmentIndex{
 		SegmentID:           segID,
 		CollectionID:        collID,
 		PartitionID:         partID,
@@ -1701,7 +1688,7 @@ func TestServer_DescribeIndex(t *testing.T) {
 		WriteHandoff:        false,
 		CurrentIndexVersion: 7,
 	})
-	segIdx1.Insert(indexID+1, &model.SegmentIndex{
+	segIdx1 = append(segIdx1, &model.SegmentIndex{
 		SegmentID:           segID,
 		CollectionID:        collID,
 		PartitionID:         partID,
@@ -1720,7 +1707,7 @@ func TestServer_DescribeIndex(t *testing.T) {
 		// deleted index
 		CurrentIndexVersion: 6,
 	})
-	segIdx1.Insert(indexID+3, &model.SegmentIndex{
+	segIdx1 = append(segIdx1, &model.SegmentIndex{
 		SegmentID:           segID,
 		CollectionID:        collID,
 		PartitionID:         partID,
@@ -1737,7 +1724,7 @@ func TestServer_DescribeIndex(t *testing.T) {
 		IndexSerializedSize: 0,
 		WriteHandoff:        false,
 	})
-	segIdx1.Insert(indexID+4, &model.SegmentIndex{
+	segIdx1 = append(segIdx1, &model.SegmentIndex{
 		SegmentID:           segID,
 		CollectionID:        collID,
 		PartitionID:         partID,
@@ -1754,7 +1741,7 @@ func TestServer_DescribeIndex(t *testing.T) {
 		IndexSerializedSize: 0,
 		WriteHandoff:        false,
 	})
-	segIdx1.Insert(indexID+5, &model.SegmentIndex{
+	segIdx1 = append(segIdx1, &model.SegmentIndex{
 		SegmentID:           segID,
 		CollectionID:        collID,
 		PartitionID:         partID,
@@ -1771,10 +1758,10 @@ func TestServer_DescribeIndex(t *testing.T) {
 		IndexSerializedSize: 0,
 		WriteHandoff:        false,
 	})
-	s.indexMeta.SegmentIndexes.Insert(segID, segIdx1)
+	s.indexMeta.PutSegmentIndexesForTest(segIdx1...)
 
-	segIdx2 := typeutil.NewConcurrentMap[UniqueID, *model.SegmentIndex]()
-	segIdx2.Insert(indexID, &model.SegmentIndex{
+	var segIdx2 []*model.SegmentIndex
+	segIdx2 = append(segIdx2, &model.SegmentIndex{
 		SegmentID:           segID - 1,
 		CollectionID:        collID,
 		PartitionID:         partID,
@@ -1787,7 +1774,7 @@ func TestServer_DescribeIndex(t *testing.T) {
 		CreatedUTCTime:      createTS,
 		CurrentIndexVersion: 6,
 	})
-	segIdx2.Insert(indexID+1, &model.SegmentIndex{
+	segIdx2 = append(segIdx2, &model.SegmentIndex{
 		SegmentID:           segID - 1,
 		CollectionID:        collID,
 		PartitionID:         partID,
@@ -1800,7 +1787,7 @@ func TestServer_DescribeIndex(t *testing.T) {
 		CreatedUTCTime:      createTS,
 		CurrentIndexVersion: 6,
 	})
-	segIdx2.Insert(indexID+3, &model.SegmentIndex{
+	segIdx2 = append(segIdx2, &model.SegmentIndex{
 		SegmentID:      segID - 1,
 		CollectionID:   collID,
 		PartitionID:    partID,
@@ -1812,7 +1799,7 @@ func TestServer_DescribeIndex(t *testing.T) {
 		IndexState:     commonpb.IndexState_InProgress,
 		CreatedUTCTime: createTS,
 	})
-	segIdx2.Insert(indexID+4, &model.SegmentIndex{
+	segIdx2 = append(segIdx2, &model.SegmentIndex{
 		SegmentID:      segID - 1,
 		CollectionID:   collID,
 		PartitionID:    partID,
@@ -1825,7 +1812,7 @@ func TestServer_DescribeIndex(t *testing.T) {
 		FailReason:     "mock failed",
 		CreatedUTCTime: createTS,
 	})
-	segIdx2.Insert(indexID+5, &model.SegmentIndex{
+	segIdx2 = append(segIdx2, &model.SegmentIndex{
 		SegmentID:           segID - 1,
 		CollectionID:        collID,
 		PartitionID:         partID,
@@ -1838,7 +1825,7 @@ func TestServer_DescribeIndex(t *testing.T) {
 		CreatedUTCTime:      createTS,
 		CurrentIndexVersion: 6,
 	})
-	s.indexMeta.SegmentIndexes.Insert(segID-1, segIdx2)
+	s.indexMeta.PutSegmentIndexesForTest(segIdx2...)
 
 	for id, segment := range segments {
 		s.meta.Segments.SetSegment(id, segment)
@@ -1926,98 +1913,94 @@ func TestServer_ListIndexes(t *testing.T) {
 	mock0Allocator := meta.NewMockAllocator(t)
 
 	catalog := catalogmocks.NewDataCoordCatalog(t)
-	im := &index.IndexMeta{
-		Catalog: catalog,
-		Indexes: map[UniqueID]map[UniqueID]*model.Index{
-			collID: {
-				// finished
-				indexID: {
-					TenantID:        "",
-					CollectionID:    collID,
-					FieldID:         fieldID,
-					IndexID:         indexID,
-					IndexName:       indexName,
-					IsDeleted:       false,
-					CreateTime:      createTS,
-					TypeParams:      typeParams,
-					IndexParams:     indexParams,
-					IsAutoIndex:     false,
-					UserIndexParams: nil,
-				},
-				// deleted
-				indexID + 1: {
-					TenantID:        "",
-					CollectionID:    collID,
-					FieldID:         fieldID + 1,
-					IndexID:         indexID + 1,
-					IndexName:       indexName + "_1",
-					IsDeleted:       true,
-					CreateTime:      createTS,
-					TypeParams:      typeParams,
-					IndexParams:     indexParams,
-					IsAutoIndex:     false,
-					UserIndexParams: nil,
-				},
-				// unissued
-				indexID + 2: {
-					TenantID:        "",
-					CollectionID:    collID,
-					FieldID:         fieldID + 2,
-					IndexID:         indexID + 2,
-					IndexName:       indexName + "_2",
-					IsDeleted:       false,
-					CreateTime:      createTS,
-					TypeParams:      typeParams,
-					IndexParams:     indexParams,
-					IsAutoIndex:     false,
-					UserIndexParams: nil,
-				},
-				// inProgress
-				indexID + 3: {
-					TenantID:        "",
-					CollectionID:    collID,
-					FieldID:         fieldID + 3,
-					IndexID:         indexID + 3,
-					IndexName:       indexName + "_3",
-					IsDeleted:       false,
-					CreateTime:      createTS,
-					TypeParams:      typeParams,
-					IndexParams:     indexParams,
-					IsAutoIndex:     false,
-					UserIndexParams: nil,
-				},
-				// failed
-				indexID + 4: {
-					TenantID:        "",
-					CollectionID:    collID,
-					FieldID:         fieldID + 4,
-					IndexID:         indexID + 4,
-					IndexName:       indexName + "_4",
-					IsDeleted:       false,
-					CreateTime:      createTS,
-					TypeParams:      typeParams,
-					IndexParams:     indexParams,
-					IsAutoIndex:     false,
-					UserIndexParams: nil,
-				},
-				// unissued
-				indexID + 5: {
-					TenantID:        "",
-					CollectionID:    collID,
-					FieldID:         fieldID + 5,
-					IndexID:         indexID + 5,
-					IndexName:       indexName + "_5",
-					IsDeleted:       false,
-					CreateTime:      createTS,
-					TypeParams:      typeParams,
-					IndexParams:     indexParams,
-					IsAutoIndex:     false,
-					UserIndexParams: nil,
-				},
+	im := index.NewIndexMetaForTest(catalog, map[UniqueID]map[UniqueID]*model.Index{
+		collID: {
+			// finished
+			indexID: {
+				TenantID:        "",
+				CollectionID:    collID,
+				FieldID:         fieldID,
+				IndexID:         indexID,
+				IndexName:       indexName,
+				IsDeleted:       false,
+				CreateTime:      createTS,
+				TypeParams:      typeParams,
+				IndexParams:     indexParams,
+				IsAutoIndex:     false,
+				UserIndexParams: nil,
+			},
+			// deleted
+			indexID + 1: {
+				TenantID:        "",
+				CollectionID:    collID,
+				FieldID:         fieldID + 1,
+				IndexID:         indexID + 1,
+				IndexName:       indexName + "_1",
+				IsDeleted:       true,
+				CreateTime:      createTS,
+				TypeParams:      typeParams,
+				IndexParams:     indexParams,
+				IsAutoIndex:     false,
+				UserIndexParams: nil,
+			},
+			// unissued
+			indexID + 2: {
+				TenantID:        "",
+				CollectionID:    collID,
+				FieldID:         fieldID + 2,
+				IndexID:         indexID + 2,
+				IndexName:       indexName + "_2",
+				IsDeleted:       false,
+				CreateTime:      createTS,
+				TypeParams:      typeParams,
+				IndexParams:     indexParams,
+				IsAutoIndex:     false,
+				UserIndexParams: nil,
+			},
+			// inProgress
+			indexID + 3: {
+				TenantID:        "",
+				CollectionID:    collID,
+				FieldID:         fieldID + 3,
+				IndexID:         indexID + 3,
+				IndexName:       indexName + "_3",
+				IsDeleted:       false,
+				CreateTime:      createTS,
+				TypeParams:      typeParams,
+				IndexParams:     indexParams,
+				IsAutoIndex:     false,
+				UserIndexParams: nil,
+			},
+			// failed
+			indexID + 4: {
+				TenantID:        "",
+				CollectionID:    collID,
+				FieldID:         fieldID + 4,
+				IndexID:         indexID + 4,
+				IndexName:       indexName + "_4",
+				IsDeleted:       false,
+				CreateTime:      createTS,
+				TypeParams:      typeParams,
+				IndexParams:     indexParams,
+				IsAutoIndex:     false,
+				UserIndexParams: nil,
+			},
+			// unissued
+			indexID + 5: {
+				TenantID:        "",
+				CollectionID:    collID,
+				FieldID:         fieldID + 5,
+				IndexID:         indexID + 5,
+				IndexName:       indexName + "_5",
+				IsDeleted:       false,
+				CreateTime:      createTS,
+				TypeParams:      typeParams,
+				IndexParams:     indexParams,
+				IsAutoIndex:     false,
+				UserIndexParams: nil,
 			},
 		},
-		SegmentIndexes: typeutil.NewConcurrentMap[UniqueID, *typeutil.ConcurrentMap[UniqueID, *model.SegmentIndex]](),
-	}
+	})
 	s := &Server{
 		meta: &meta.Meta{
 			MetaStore: metacache.NewMetaStore(catalog),
@@ -2120,98 +2103,94 @@ func TestServer_GetIndexStatistics(t *testing.T) {
 		},
 	}
 	b := broker.NewMockBroker(t)
-	im := &index.IndexMeta{
-		Catalog: catalog,
-		Indexes: map[UniqueID]map[UniqueID]*model.Index{
-			collID: {
-				// finished
-				indexID: {
-					TenantID:        "",
-					CollectionID:    collID,
-					FieldID:         fieldID,
-					IndexID:         indexID,
-					IndexName:       indexName,
-					IsDeleted:       false,
-					CreateTime:      createTS,
-					TypeParams:      typeParams,
-					IndexParams:     indexParams,
-					IsAutoIndex:     false,
-					UserIndexParams: nil,
-				},
-				// deleted
-				indexID + 1: {
-					TenantID:        "",
-					CollectionID:    collID,
-					FieldID:         fieldID + 1,
-					IndexID:         indexID + 1,
-					IndexName:       indexName + "_1",
-					IsDeleted:       true,
-					CreateTime:      createTS,
-					TypeParams:      typeParams,
-					IndexParams:     indexParams,
-					IsAutoIndex:     false,
-					UserIndexParams: nil,
-				},
-				// unissued
-				indexID + 2: {
-					TenantID:        "",
-					CollectionID:    collID,
-					FieldID:         fieldID + 2,
-					IndexID:         indexID + 2,
-					IndexName:       indexName + "_2",
-					IsDeleted:       false,
-					CreateTime:      createTS,
-					TypeParams:      typeParams,
-					IndexParams:     indexParams,
-					IsAutoIndex:     false,
-					UserIndexParams: nil,
-				},
-				// inProgress
-				indexID + 3: {
-					TenantID:        "",
-					CollectionID:    collID,
-					FieldID:         fieldID + 3,
-					IndexID:         indexID + 3,
-					IndexName:       indexName + "_3",
-					IsDeleted:       false,
-					CreateTime:      createTS,
-					TypeParams:      typeParams,
-					IndexParams:     indexParams,
-					IsAutoIndex:     false,
-					UserIndexParams: nil,
-				},
-				// failed
-				indexID + 4: {
-					TenantID:        "",
-					CollectionID:    collID,
-					FieldID:         fieldID + 4,
-					IndexID:         indexID + 4,
-					IndexName:       indexName + "_4",
-					IsDeleted:       false,
-					CreateTime:      createTS,
-					TypeParams:      typeParams,
-					IndexParams:     indexParams,
-					IsAutoIndex:     false,
-					UserIndexParams: nil,
-				},
-				// unissued
-				indexID + 5: {
-					TenantID:        "",
-					CollectionID:    collID,
-					FieldID:         fieldID + 5,
-					IndexID:         indexID + 5,
-					IndexName:       indexName + "_5",
-					IsDeleted:       false,
-					CreateTime:      createTS,
-					TypeParams:      typeParams,
-					IndexParams:     indexParams,
-					IsAutoIndex:     false,
-					UserIndexParams: nil,
-				},
+	im := index.NewIndexMetaForTest(catalog, map[UniqueID]map[UniqueID]*model.Index{
+		collID: {
+			// finished
+			indexID: {
+				TenantID:        "",
+				CollectionID:    collID,
+				FieldID:         fieldID,
+				IndexID:         indexID,
+				IndexName:       indexName,
+				IsDeleted:       false,
+				CreateTime:      createTS,
+				TypeParams:      typeParams,
+				IndexParams:     indexParams,
+				IsAutoIndex:     false,
+				UserIndexParams: nil,
+			},
+			// deleted
+			indexID + 1: {
+				TenantID:        "",
+				CollectionID:    collID,
+				FieldID:         fieldID + 1,
+				IndexID:         indexID + 1,
+				IndexName:       indexName + "_1",
+				IsDeleted:       true,
+				CreateTime:      createTS,
+				TypeParams:      typeParams,
+				IndexParams:     indexParams,
+				IsAutoIndex:     false,
+				UserIndexParams: nil,
+			},
+			// unissued
+			indexID + 2: {
+				TenantID:        "",
+				CollectionID:    collID,
+				FieldID:         fieldID + 2,
+				IndexID:         indexID + 2,
+				IndexName:       indexName + "_2",
+				IsDeleted:       false,
+				CreateTime:      createTS,
+				TypeParams:      typeParams,
+				IndexParams:     indexParams,
+				IsAutoIndex:     false,
+				UserIndexParams: nil,
+			},
+			// inProgress
+			indexID + 3: {
+				TenantID:        "",
+				CollectionID:    collID,
+				FieldID:         fieldID + 3,
+				IndexID:         indexID + 3,
+				IndexName:       indexName + "_3",
+				IsDeleted:       false,
+				CreateTime:      createTS,
+				TypeParams:      typeParams,
+				IndexParams:     indexParams,
+				IsAutoIndex:     false,
+				UserIndexParams: nil,
+			},
+			// failed
+			indexID + 4: {
+				TenantID:        "",
+				CollectionID:    collID,
+				FieldID:         fieldID + 4,
+				IndexID:         indexID + 4,
+				IndexName:       indexName + "_4",
+				IsDeleted:       false,
+				CreateTime:      createTS,
+				TypeParams:      typeParams,
+				IndexParams:     indexParams,
+				IsAutoIndex:     false,
+				UserIndexParams: nil,
+			},
+			// unissued
+			indexID + 5: {
+				TenantID:        "",
+				CollectionID:    collID,
+				FieldID:         fieldID + 5,
+				IndexID:         indexID + 5,
+				IndexName:       indexName + "_5",
+				IsDeleted:       false,
+				CreateTime:      createTS,
+				TypeParams:      typeParams,
+				IndexParams:     indexParams,
+				IsAutoIndex:     false,
+				UserIndexParams: nil,
 			},
 		},
-		SegmentIndexes: typeutil.NewConcurrentMap[UniqueID, *typeutil.ConcurrentMap[UniqueID, *model.SegmentIndex]](),
-	}
+	})
 	s := &Server{
 		meta: &meta.Meta{
 			MetaStore: metacache.NewMetaStore(catalog),
@@ -2225,8 +2204,8 @@ func TestServer_GetIndexStatistics(t *testing.T) {
 		broker:          b,
 	}
 	seedCollections(s, &meta.CollectionInfo{ID: collID, DatabaseName: "test_db", Schema: &schemapb.CollectionSchema{Name: "test_collection"}})
-	segIdx1 := typeutil.NewConcurrentMap[UniqueID, *model.SegmentIndex]()
-	segIdx1.Insert(indexID, &model.SegmentIndex{
+	var segIdx1 []*model.SegmentIndex
+	segIdx1 = append(segIdx1, &model.SegmentIndex{
 		SegmentID:           segID,
 		CollectionID:        collID,
 		PartitionID:         partID,
@@ -2243,7 +2222,7 @@ func TestServer_GetIndexStatistics(t *testing.T) {
 		IndexSerializedSize: 0,
 		WriteHandoff:        false,
 	})
-	segIdx1.Insert(indexID+1, &model.SegmentIndex{
+	segIdx1 = append(segIdx1, &model.SegmentIndex{
 		SegmentID:           segID,
 		CollectionID:        collID,
 		PartitionID:         partID,
@@ -2260,7 +2239,7 @@ func TestServer_GetIndexStatistics(t *testing.T) {
 		IndexSerializedSize: 0,
 		WriteHandoff:        false,
 	})
-	segIdx1.Insert(indexID+3, &model.SegmentIndex{
+	segIdx1 = append(segIdx1, &model.SegmentIndex{
 		SegmentID:           segID,
 		CollectionID:        collID,
 		PartitionID:         partID,
@@ -2277,7 +2256,7 @@ func TestServer_GetIndexStatistics(t *testing.T) {
 		IndexSerializedSize: 0,
 		WriteHandoff:        false,
 	})
-	segIdx1.Insert(indexID+4, &model.SegmentIndex{
+	segIdx1 = append(segIdx1, &model.SegmentIndex{
 		SegmentID:           segID,
 		CollectionID:        collID,
 		PartitionID:         partID,
@@ -2294,7 +2273,7 @@ func TestServer_GetIndexStatistics(t *testing.T) {
 		IndexSerializedSize: 0,
 		WriteHandoff:        false,
 	})
-	segIdx1.Insert(indexID+5, &model.SegmentIndex{
+	segIdx1 = append(segIdx1, &model.SegmentIndex{
 		SegmentID:           segID,
 		CollectionID:        collID,
 		PartitionID:         partID,
@@ -2311,7 +2290,7 @@ func TestServer_GetIndexStatistics(t *testing.T) {
 		IndexSerializedSize: 0,
 		WriteHandoff:        false,
 	})
-	s.indexMeta.SegmentIndexes.Insert(segID, segIdx1)
+	s.indexMeta.PutSegmentIndexesForTest(segIdx1...)
 	for id, segment := range segments {
 		s.meta.Segments.SetSegment(id, segment)
 	}
@@ -2392,84 +2371,80 @@ func TestServer_DropIndex(t *testing.T) {
 
 	b := broker.NewMockBroker(t)
 
-	im := &index.IndexMeta{
-		Catalog: catalog,
-		Indexes: map[UniqueID]map[UniqueID]*model.Index{
-			collID: {
-				// finished
-				indexID: {
-					TenantID:        "",
-					CollectionID:    collID,
-					FieldID:         fieldID,
-					IndexID:         indexID,
-					IndexName:       indexName,
-					IsDeleted:       false,
-					CreateTime:      createTS,
-					TypeParams:      typeParams,
-					IndexParams:     indexParams,
-					IsAutoIndex:     false,
-					UserIndexParams: nil,
-				},
-				// deleted
-				indexID + 1: {
-					TenantID:        "",
-					CollectionID:    collID,
-					FieldID:         fieldID + 1,
-					IndexID:         indexID + 1,
-					IndexName:       indexName + "_1",
-					IsDeleted:       true,
-					CreateTime:      createTS,
-					TypeParams:      typeParams,
-					IndexParams:     indexParams,
-					IsAutoIndex:     false,
-					UserIndexParams: nil,
-				},
-				// unissued
-				indexID + 2: {
-					TenantID:        "",
-					CollectionID:    collID,
-					FieldID:         fieldID + 2,
-					IndexID:         indexID + 2,
-					IndexName:       indexName + "_2",
-					IsDeleted:       false,
-					CreateTime:      createTS,
-					TypeParams:      typeParams,
-					IndexParams:     indexParams,
-					IsAutoIndex:     false,
-					UserIndexParams: nil,
-				},
-				// inProgress
-				indexID + 3: {
-					TenantID:        "",
-					CollectionID:    collID,
-					FieldID:         fieldID,
-					IndexID:         indexID + 3,
-					IndexName:       indexName + "_3",
-					IsDeleted:       false,
-					CreateTime:      createTS,
-					TypeParams:      typeParams,
-					IndexParams:     indexParams,
-					IsAutoIndex:     false,
-					UserIndexParams: nil,
-				},
-				// failed
-				indexID + 4: {
-					TenantID:        "",
-					CollectionID:    collID,
-					FieldID:         fieldID,
-					IndexID:         indexID + 4,
-					IndexName:       indexName + "_4",
-					IsDeleted:       false,
-					CreateTime:      createTS,
-					TypeParams:      typeParams,
-					IndexParams:     indexParams,
-					IsAutoIndex:     false,
-					UserIndexParams: nil,
-				},
+	im := index.NewIndexMetaForTest(catalog, map[UniqueID]map[UniqueID]*model.Index{
+		collID: {
+			// finished
+			indexID: {
+				TenantID:        "",
+				CollectionID:    collID,
+				FieldID:         fieldID,
+				IndexID:         indexID,
+				IndexName:       indexName,
+				IsDeleted:       false,
+				CreateTime:      createTS,
+				TypeParams:      typeParams,
+				IndexParams:     indexParams,
+				IsAutoIndex:     false,
+				UserIndexParams: nil,
+			},
+			// deleted
+			indexID + 1: {
+				TenantID:        "",
+				CollectionID:    collID,
+				FieldID:         fieldID + 1,
+				IndexID:         indexID + 1,
+				IndexName:       indexName + "_1",
+				IsDeleted:       true,
+				CreateTime:      createTS,
+				TypeParams:      typeParams,
+				IndexParams:     indexParams,
+				IsAutoIndex:     false,
+				UserIndexParams: nil,
+			},
+			// unissued
+			indexID + 2: {
+				TenantID:        "",
+				CollectionID:    collID,
+				FieldID:         fieldID + 2,
+				IndexID:         indexID + 2,
+				IndexName:       indexName + "_2",
+				IsDeleted:       false,
+				CreateTime:      createTS,
+				TypeParams:      typeParams,
+				IndexParams:     indexParams,
+				IsAutoIndex:     false,
+				UserIndexParams: nil,
+			},
+			// inProgress
+			indexID + 3: {
+				TenantID:        "",
+				CollectionID:    collID,
+				FieldID:         fieldID,
+				IndexID:         indexID + 3,
+				IndexName:       indexName + "_3",
+				IsDeleted:       false,
+				CreateTime:      createTS,
+				TypeParams:      typeParams,
+				IndexParams:     indexParams,
+				IsAutoIndex:     false,
+				UserIndexParams: nil,
+			},
+			// failed
+			indexID + 4: {
+				TenantID:        "",
+				CollectionID:    collID,
+				FieldID:         fieldID,
+				IndexID:         indexID + 4,
+				IndexName:       indexName + "_4",
+				IsDeleted:       false,
+				CreateTime:      createTS,
+				TypeParams:      typeParams,
+				IndexParams:     indexParams,
+				IsAutoIndex:     false,
+				UserIndexParams: nil,
 			},
 		},
-		SegmentIndexes: typeutil.NewConcurrentMap[UniqueID, *typeutil.ConcurrentMap[UniqueID, *model.SegmentIndex]](),
-	}
+	})
 	s := &Server{
 		meta: &meta.Meta{
 			MetaStore: metacache.NewMetaStore(catalog),
@@ -2588,28 +2563,24 @@ func TestServer_DropIndex_DroppedField(t *testing.T) {
 	b := broker.NewMockBroker(t)
 
 	metaStore := metacache.NewMetaStore(nil)
-	im := &index.IndexMeta{
-		Catalog: catalog,
-		Indexes: map[UniqueID]map[UniqueID]*model.Index{
-			collID: {
-				indexID: {
-					CollectionID: collID,
-					FieldID:      fieldID, // points to dropped field
-					IndexID:      indexID,
-					IndexName:    indexName,
-					IsDeleted:    false,
-					CreateTime:   createTS,
-					TypeParams: []*commonpb.KeyValuePair{
-						{Key: common.DimKey, Value: "128"},
-					},
-					IndexParams: []*commonpb.KeyValuePair{
-						{Key: common.IndexTypeKey, Value: "IVF_FLAT"},
-					},
+	im := index.NewIndexMetaForTest(catalog, map[UniqueID]map[UniqueID]*model.Index{
+		collID: {
+			indexID: {
+				CollectionID: collID,
+				FieldID:      fieldID, // points to dropped field
+				IndexID:      indexID,
+				IndexName:    indexName,
+				IsDeleted:    false,
+				CreateTime:   createTS,
+				TypeParams: []*commonpb.KeyValuePair{
+					{Key: common.DimKey, Value: "128"},
+				},
+				IndexParams: []*commonpb.KeyValuePair{
+					{Key: common.IndexTypeKey, Value: "IVF_FLAT"},
 				},
 			},
 		},
-		SegmentIndexes: typeutil.NewConcurrentMap[UniqueID, *typeutil.ConcurrentMap[UniqueID, *model.SegmentIndex]](),
-	}
+	})
 	s := &Server{
 		meta: &meta.Meta{
 			Catalog:   catalog,
@@ -2685,28 +2656,24 @@ func TestServer_GetIndexInfos(t *testing.T) {
 
 	mock0Allocator := meta.NewMockAllocator(t)
 
-	im := &index.IndexMeta{
-		Catalog: &datacoord.Catalog{MetaKv: mockkv.NewMetaKv(t)},
-		Indexes: map[UniqueID]map[UniqueID]*model.Index{
-			collID: {
-				// finished
-				indexID: {
-					TenantID:        "",
-					CollectionID:    collID,
-					FieldID:         fieldID,
-					IndexID:         indexID,
-					IndexName:       indexName,
-					IsDeleted:       false,
-					CreateTime:      createTS,
-					TypeParams:      typeParams,
-					IndexParams:     indexParams,
-					IsAutoIndex:     false,
-					UserIndexParams: nil,
-				},
+	im := index.NewIndexMetaForTest(&datacoord.Catalog{MetaKv: mockkv.NewMetaKv(t)}, map[UniqueID]map[UniqueID]*model.Index{
+		collID: {
+			// finished
+			indexID: {
+				TenantID:        "",
+				CollectionID:    collID,
+				FieldID:         fieldID,
+				IndexID:         indexID,
+				IndexName:       indexName,
+				IsDeleted:       false,
+				CreateTime:      createTS,
+				TypeParams:      typeParams,
+				IndexParams:     indexParams,
+				IsAutoIndex:     false,
+				UserIndexParams: nil,
 			},
 		},
-		SegmentIndexes: typeutil.NewConcurrentMap[UniqueID, *typeutil.ConcurrentMap[UniqueID, *model.SegmentIndex]](),
-	}
+	})
 	s := &Server{
 		meta: &meta.Meta{
 			MetaStore: metacache.NewMetaStore(&datacoord.Catalog{MetaKv: mockkv.NewMetaKv(t)}),
@@ -2718,8 +2685,8 @@ func TestServer_GetIndexInfos(t *testing.T) {
 		allocator:       mock0Allocator,
 		notifyIndexChan: make(chan UniqueID, 1),
 	}
-	segIdx1 := typeutil.NewConcurrentMap[UniqueID, *model.SegmentIndex]()
-	segIdx1.Insert(indexID, &model.SegmentIndex{
+	var segIdx1 []*model.SegmentIndex
+	segIdx1 = append(segIdx1, &model.SegmentIndex{
 		SegmentID:           segID,
 		CollectionID:        collID,
 		PartitionID:         partID,
@@ -2736,7 +2703,7 @@ func TestServer_GetIndexInfos(t *testing.T) {
 		IndexSerializedSize: 0,
 		WriteHandoff:        false,
 	})
-	s.indexMeta.SegmentIndexes.Insert(segID, segIdx1)
+	s.indexMeta.PutSegmentIndexesForTest(segIdx1...)
 	s.meta.Segments.SetSegment(segID, &meta.SegmentInfo{
 		SegmentInfo: &datapb.SegmentInfo{
 			ID:             segID,
@@ -2784,7 +2751,7 @@ func TestServer_GetIndexInfos(t *testing.T) {
 			segIdx := s.indexMeta.GetSegmentIndexes(collID, segID)[indexID]
 			segIdx.IndexStorePathVersion = tc.version
 			segIdx.IndexFileKeys = []string{"index.bin"}
-			segIdx1.Insert(indexID, segIdx)
+			s.indexMeta.PutSegmentIndexesForTest(segIdx)
 			s.meta.Segments.DropSegment(segID)
 			if tc.segment != nil {
 				tc.segment.ID, tc.segment.CollectionID, tc.segment.PartitionID = segID, collID, partID
@@ -3011,4 +2978,18 @@ func TestJsonIndex(t *testing.T) {
 	}
 	resp, err = s.CreateIndex(context.Background(), req)
 	assert.Error(t, merr.CheckRPCCall(resp, err))
+}
+
+// resetIndexesForTest drops every index definition from im's store.
+func resetIndexesForTest(im *index.IndexMeta) {
+	for _, idx := range im.Store().ListAllIndexes() {
+		im.Store().RemoveIndex(idx.CollectionID, idx.IndexID)
+	}
+}
+
+// resetCollectionIndexesForTest drops the index definitions of collectionID.
+func resetCollectionIndexesForTest(im *index.IndexMeta, collectionID int64) {
+	for _, idx := range im.Store().GetIndexes(collectionID) {
+		im.Store().RemoveIndex(collectionID, idx.IndexID)
+	}
 }

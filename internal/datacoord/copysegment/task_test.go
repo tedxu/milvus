@@ -1072,7 +1072,7 @@ func (s *CopySegmentTaskSuite) TestSyncVectorScalarIndexes_SingleIndex() {
 	s.NoError(err)
 
 	// Verify the segment index was added with target indexID and Finished state
-	segIdx, ok := im.SegmentBuildInfo.Get(5001)
+	segIdx, ok := im.Store().GetSegmentIndexByBuildID(5001)
 	s.True(ok)
 	s.Equal(int64(300), segIdx.IndexID) // target indexID, not source 200
 	s.Equal(commonpb.IndexState_Finished, segIdx.IndexState)
@@ -1117,11 +1117,11 @@ func (s *CopySegmentTaskSuite) TestSyncVectorScalarIndexes_PreservesIndexStorePa
 	err := syncVectorScalarIndexes(context.Background(), result, task, m, im, nil, nil)
 	s.NoError(err)
 
-	segIdxV0, ok := im.SegmentBuildInfo.Get(2001)
+	segIdxV0, ok := im.Store().GetSegmentIndexByBuildID(2001)
 	s.True(ok)
 	s.Equal(indexpb.IndexStorePathVersion_INDEX_STORE_PATH_VERSION_BUILD_ROOTED, segIdxV0.IndexStorePathVersion)
 
-	segIdxV1, ok := im.SegmentBuildInfo.Get(2002)
+	segIdxV1, ok := im.Store().GetSegmentIndexByBuildID(2002)
 	s.True(ok)
 	s.Equal(indexpb.IndexStorePathVersion_INDEX_STORE_PATH_VERSION_COLLECTION_ROOTED, segIdxV1.IndexStorePathVersion)
 }
@@ -1177,7 +1177,7 @@ func (s *CopySegmentTaskSuite) TestSyncVectorScalarIndexes_MultipleIndexesPerFie
 
 	// All three indexes should be synced with correct target indexIDs
 	for buildID, expectedIndexID := range map[int64]int64{5001: 300, 5002: 301, 5003: 302} {
-		segIdx, ok := im.SegmentBuildInfo.Get(buildID)
+		segIdx, ok := im.Store().GetSegmentIndexByBuildID(buildID)
 		s.True(ok, "buildID %d should exist", buildID)
 		s.Equal(expectedIndexID, segIdx.IndexID, "buildID %d should map to indexID %d", buildID, expectedIndexID)
 		s.Equal(commonpb.IndexState_Finished, segIdx.IndexState)
@@ -1212,7 +1212,7 @@ func (s *CopySegmentTaskSuite) TestSyncVectorScalarIndexes_IndexNameNotFound() {
 	s.NoError(err)
 
 	// Should not be added
-	_, ok := im.SegmentBuildInfo.Get(5001)
+	_, ok := im.Store().GetSegmentIndexByBuildID(5001)
 	s.False(ok)
 }
 
@@ -2173,14 +2173,14 @@ func (s *CopySegmentTaskSuite) TestValidateCopiedManifestIndexPlacement_FailsWhe
 	err := validateCopiedManifestIndexPlacement(result, task, m, im, nil)
 	s.Require().Error(err)
 	s.Contains(err.Error(), "predates manifest index republication")
-	_, installed := im.SegmentBuildInfo.Get(8001)
+	_, installed := im.Store().GetSegmentIndexByBuildID(8001)
 	s.False(installed, "no memory-only record may be installed for an entry the manifest does not carry")
 
 	// The control: the same shape dispatched with manifest writes off records to etcd.
 	task.(*Task).Task.Load().IndexWriteToManifest = proto.Bool(false)
 	s.NoError(validateCopiedManifestIndexPlacement(result, task, m, im, nil))
 	s.NoError(syncVectorScalarIndexes(context.Background(), result, task, m, im, copyMeta, nil))
-	_, installed = im.SegmentBuildInfo.Get(8001)
+	_, installed = im.Store().GetSegmentIndexByBuildID(8001)
 	s.True(installed)
 }
 

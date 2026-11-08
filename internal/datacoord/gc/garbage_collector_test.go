@@ -67,7 +67,6 @@ import (
 	"github.com/milvus-io/milvus/pkg/v3/proto/indexpb"
 	"github.com/milvus-io/milvus/pkg/v3/proto/workerpb"
 	"github.com/milvus-io/milvus/pkg/v3/util/funcutil"
-	"github.com/milvus-io/milvus/pkg/v3/util/lock"
 	"github.com/milvus-io/milvus/pkg/v3/util/merr"
 	"github.com/milvus-io/milvus/pkg/v3/util/metautil"
 	"github.com/milvus-io/milvus/pkg/v3/util/paramtable"
@@ -526,55 +525,51 @@ func createMetaForRecycleUnusedIndexes(catalog metastore.DataCoordCatalog) (*met
 		fieldID = UniqueID(300)
 		indexID = UniqueID(400)
 	)
-	im := &index.IndexMeta{
-		Catalog: catalog,
-		Indexes: map[UniqueID]map[UniqueID]*model.Index{
-			collID: {
-				indexID: {
-					TenantID:        "",
-					CollectionID:    collID,
-					FieldID:         fieldID,
-					IndexID:         indexID,
-					IndexName:       "_default_idx",
-					IsDeleted:       false,
-					CreateTime:      10,
-					TypeParams:      nil,
-					IndexParams:     nil,
-					IsAutoIndex:     false,
-					UserIndexParams: nil,
-				},
-				indexID + 1: {
-					TenantID:        "",
-					CollectionID:    collID,
-					FieldID:         fieldID + 1,
-					IndexID:         indexID + 1,
-					IndexName:       "_default_idx_101",
-					IsDeleted:       true,
-					CreateTime:      0,
-					TypeParams:      nil,
-					IndexParams:     nil,
-					IsAutoIndex:     false,
-					UserIndexParams: nil,
-				},
+	im := index.NewIndexMetaForTest(catalog, map[UniqueID]map[UniqueID]*model.Index{
+		collID: {
+			indexID: {
+				TenantID:        "",
+				CollectionID:    collID,
+				FieldID:         fieldID,
+				IndexID:         indexID,
+				IndexName:       "_default_idx",
+				IsDeleted:       false,
+				CreateTime:      10,
+				TypeParams:      nil,
+				IndexParams:     nil,
+				IsAutoIndex:     false,
+				UserIndexParams: nil,
 			},
-			collID + 1: {
-				indexID + 10: {
-					TenantID:        "",
-					CollectionID:    collID + 1,
-					FieldID:         fieldID + 10,
-					IndexID:         indexID + 10,
-					IndexName:       "index",
-					IsDeleted:       true,
-					CreateTime:      10,
-					TypeParams:      nil,
-					IndexParams:     nil,
-					IsAutoIndex:     false,
-					UserIndexParams: nil,
-				},
+			indexID + 1: {
+				TenantID:        "",
+				CollectionID:    collID,
+				FieldID:         fieldID + 1,
+				IndexID:         indexID + 1,
+				IndexName:       "_default_idx_101",
+				IsDeleted:       true,
+				CreateTime:      0,
+				TypeParams:      nil,
+				IndexParams:     nil,
+				IsAutoIndex:     false,
+				UserIndexParams: nil,
 			},
 		},
-		SegmentBuildInfo: index.NewSegmentIndexBuildInfo(),
-	}
+		collID + 1: {
+			indexID + 10: {
+				TenantID:        "",
+				CollectionID:    collID + 1,
+				FieldID:         fieldID + 10,
+				IndexID:         indexID + 10,
+				IndexName:       "index",
+				IsDeleted:       true,
+				CreateTime:      10,
+				TypeParams:      nil,
+				IndexParams:     nil,
+				IsAutoIndex:     false,
+				UserIndexParams: nil,
+			},
+		},
+	})
 	return &meta.Meta{
 		Ctx:          ctx,
 		MetaStore:    metacache.NewMetaStore(catalog),
@@ -640,9 +635,7 @@ func createMetaForRecycleUnusedSegIndexes(catalog metastore.DataCoordCatalog) (*
 			},
 		},
 	}
-	segIndexes := typeutil.NewConcurrentMap[UniqueID, *typeutil.ConcurrentMap[UniqueID, *model.SegmentIndex]]()
-	segIdx0 := typeutil.NewConcurrentMap[UniqueID, *model.SegmentIndex]()
-	segIdx0.Insert(indexID, &model.SegmentIndex{
+	segIdx0 := &model.SegmentIndex{
 		SegmentID:           segID,
 		CollectionID:        collID,
 		PartitionID:         partID,
@@ -658,9 +651,8 @@ func createMetaForRecycleUnusedSegIndexes(catalog metastore.DataCoordCatalog) (*
 		IndexFileKeys:       []string{"file1", "file2"},
 		IndexSerializedSize: 0,
 		WriteHandoff:        false,
-	})
-	segIdx1 := typeutil.NewConcurrentMap[UniqueID, *model.SegmentIndex]()
-	segIdx1.Insert(indexID, &model.SegmentIndex{
+	}
+	segIdx1 := &model.SegmentIndex{
 		SegmentID:           segID + 1,
 		CollectionID:        collID,
 		PartitionID:         partID,
@@ -676,57 +668,15 @@ func createMetaForRecycleUnusedSegIndexes(catalog metastore.DataCoordCatalog) (*
 		IndexFileKeys:       []string{"file1", "file2"},
 		IndexSerializedSize: 0,
 		WriteHandoff:        false,
-	})
-	segIndexes.Insert(segID, segIdx0)
-	segIndexes.Insert(segID+1, segIdx1)
-	store := metacache.NewMetaStore(catalog)
-	im := &index.IndexMeta{
-		Catalog:          catalog,
-		SegmentIndexes:   segIndexes,
-		Indexes:          map[UniqueID]map[UniqueID]*model.Index{},
-		SegmentBuildInfo: index.NewSegmentIndexBuildInfo(),
-		KeyLock:          lock.NewKeyLock[UniqueID](),
 	}
+	store := metacache.NewMetaStore(catalog)
+	im := index.NewIndexMetaForTest(catalog, nil, segIdx0, segIdx1)
 	mt := &meta.Meta{
 		Ctx:          ctx,
 		MetaStore:    store,
 		Segments:     meta.NewSegmentsInfo(store),
 		ChunkManager: nil,
 	}
-
-	im.SegmentBuildInfo.Add(&model.SegmentIndex{
-		SegmentID:           segID,
-		CollectionID:        collID,
-		PartitionID:         partID,
-		NumRows:             1026,
-		IndexID:             indexID,
-		BuildID:             meta.BuildID,
-		NodeID:              1,
-		IndexVersion:        1,
-		IndexState:          commonpb.IndexState_Finished,
-		FailReason:          "",
-		IsDeleted:           false,
-		CreatedUTCTime:      10,
-		IndexFileKeys:       []string{"file1", "file2"},
-		IndexSerializedSize: 0,
-	})
-
-	im.SegmentBuildInfo.Add(&model.SegmentIndex{
-		SegmentID:           segID + 1,
-		CollectionID:        collID,
-		PartitionID:         partID,
-		NumRows:             1026,
-		IndexID:             indexID,
-		BuildID:             meta.BuildID + 1,
-		NodeID:              1,
-		IndexVersion:        1,
-		IndexState:          commonpb.IndexState_Finished,
-		FailReason:          "",
-		IsDeleted:           false,
-		CreatedUTCTime:      10,
-		IndexFileKeys:       []string{"file1", "file2"},
-		IndexSerializedSize: 0,
-	})
 
 	for id, segment := range segments {
 		mt.Segments.SetSegment(id, segment)
@@ -793,13 +743,7 @@ func TestGarbageCollector_recycleUnusedSegIndexes(t *testing.T) {
 		catalog.EXPECT().DropSegmentIndex(mock.Anything, collID, partID, segID, buildID).Return(nil)
 
 		store := metacache.NewMetaStore(nil)
-		im := &index.IndexMeta{
-			Catalog:          catalog,
-			SegmentIndexes:   typeutil.NewConcurrentMap[UniqueID, *typeutil.ConcurrentMap[UniqueID, *model.SegmentIndex]](),
-			Indexes:          map[UniqueID]map[UniqueID]*model.Index{},
-			SegmentBuildInfo: index.NewSegmentIndexBuildInfo(),
-			KeyLock:          lock.NewKeyLock[UniqueID](),
-		}
+		im := index.NewIndexMetaForTest(catalog, nil)
 		mt := &meta.Meta{
 			MetaStore: store,
 			Segments:  meta.NewSegmentsInfo(store),
@@ -818,10 +762,7 @@ func TestGarbageCollector_recycleUnusedSegIndexes(t *testing.T) {
 			IndexState:            commonpb.IndexState_Finished,
 			IndexFileKeys:         []string{"file1", "file2"},
 		}
-		im.SegmentBuildInfo.Add(latest)
-		segIdxes := typeutil.NewConcurrentMap[UniqueID, *model.SegmentIndex]()
-		segIdxes.Insert(indexID, latest)
-		im.SegmentIndexes.Insert(segID, segIdxes)
+		im.PutSegmentIndexesForTest(latest)
 
 		stale := model.CloneSegmentIndex(latest)
 		stale.IndexState = commonpb.IndexState_InProgress
@@ -842,7 +783,7 @@ func TestGarbageCollector_recycleUnusedSegIndexes(t *testing.T) {
 		gc := NewGarbageCollector(mt, nil, GcTestDomainOption(&snapshot.SnapshotTestMetas{IndexMeta: im, SnapshotMeta: sm}, GcOption{Cli: cm}))
 		gc.RecycleUnusedSegIndexes(context.TODO(), nil)
 
-		_, ok := im.SegmentBuildInfo.Get(buildID)
+		_, ok := im.Store().GetSegmentIndexByBuildID(buildID)
 		assert.False(t, ok)
 	})
 
@@ -857,13 +798,7 @@ func TestGarbageCollector_recycleUnusedSegIndexes(t *testing.T) {
 
 		catalog := catalogmocks.NewDataCoordCatalog(t)
 		store := metacache.NewMetaStore(nil)
-		im := &index.IndexMeta{
-			Catalog:          catalog,
-			SegmentIndexes:   typeutil.NewConcurrentMap[UniqueID, *typeutil.ConcurrentMap[UniqueID, *model.SegmentIndex]](),
-			Indexes:          map[UniqueID]map[UniqueID]*model.Index{},
-			SegmentBuildInfo: index.NewSegmentIndexBuildInfo(),
-			KeyLock:          lock.NewKeyLock[UniqueID](),
-		}
+		im := index.NewIndexMetaForTest(catalog, nil)
 		mt := &meta.Meta{
 			MetaStore: store,
 			Segments:  meta.NewSegmentsInfo(store),
@@ -882,7 +817,7 @@ func TestGarbageCollector_recycleUnusedSegIndexes(t *testing.T) {
 			IndexState:            commonpb.IndexState_InProgress,
 			IndexFileKeys:         []string{"file1"},
 		}
-		im.SegmentBuildInfo.Add(latest)
+		im.PutBuildForTest(latest)
 
 		stale := model.CloneSegmentIndex(latest)
 		stale.IndexState = commonpb.IndexState_Finished
@@ -895,7 +830,7 @@ func TestGarbageCollector_recycleUnusedSegIndexes(t *testing.T) {
 		gc := NewGarbageCollector(mt, nil, GcTestDomainOption(&snapshot.SnapshotTestMetas{IndexMeta: im, SnapshotMeta: sm}, GcOption{Cli: cm}))
 		gc.RecycleUnusedSegIndexes(context.TODO(), nil)
 
-		_, ok := im.SegmentBuildInfo.Get(buildID)
+		_, ok := im.Store().GetSegmentIndexByBuildID(buildID)
 		assert.True(t, ok)
 		catalog.AssertNotCalled(t, "DropSegmentIndex", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 		cm.AssertNotCalled(t, "Remove", mock.Anything, mock.Anything)
@@ -913,20 +848,14 @@ func TestGarbageCollector_recycleUnusedSegIndexes(t *testing.T) {
 		catalog := catalogmocks.NewDataCoordCatalog(t)
 		catalog.EXPECT().DropSegmentIndex(mock.Anything, collID, partID, segID, buildID).Return(nil)
 		store := metacache.NewMetaStore(nil)
-		im := &index.IndexMeta{
-			Catalog:          catalog,
-			SegmentIndexes:   typeutil.NewConcurrentMap[UniqueID, *typeutil.ConcurrentMap[UniqueID, *model.SegmentIndex]](),
-			Indexes:          map[UniqueID]map[UniqueID]*model.Index{},
-			SegmentBuildInfo: index.NewSegmentIndexBuildInfo(),
-			KeyLock:          lock.NewKeyLock[UniqueID](),
-		}
+		im := index.NewIndexMetaForTest(catalog, nil)
 		mt := &meta.Meta{
 			MetaStore: store,
 			Segments:  meta.NewSegmentsInfo(store),
 		}
 		sm := &snapshot.SnapshotMeta{}
 		mt.CompactionProtection = sm
-		im.SegmentBuildInfo.Add(&model.SegmentIndex{
+		im.PutBuildForTest(&model.SegmentIndex{
 			SegmentID:             segID,
 			CollectionID:          collID,
 			PartitionID:           partID,
@@ -945,7 +874,7 @@ func TestGarbageCollector_recycleUnusedSegIndexes(t *testing.T) {
 		gc := NewGarbageCollector(mt, nil, GcTestDomainOption(&snapshot.SnapshotTestMetas{IndexMeta: im, SnapshotMeta: sm}, GcOption{Cli: cm}))
 		gc.RecycleUnusedSegIndexes(context.TODO(), nil)
 
-		_, ok := im.SegmentBuildInfo.Get(buildID)
+		_, ok := im.Store().GetSegmentIndexByBuildID(buildID)
 		assert.False(t, ok)
 	})
 }
@@ -1022,34 +951,29 @@ func createMetaTableForRecycleUnusedIndexFiles(catalog *datacoord.Catalog) (*met
 	segIndexes.Insert(segID, segIdx0)
 	segIndexes.Insert(segID+1, segIdx1)
 	store := metacache.NewMetaStore(catalog)
-	im := &index.IndexMeta{
-		Catalog:        catalog,
-		SegmentIndexes: segIndexes,
-		Indexes: map[UniqueID]map[UniqueID]*model.Index{
-			collID: {
-				indexID: {
-					TenantID:        "",
-					CollectionID:    collID,
-					FieldID:         meta.FieldID,
-					IndexID:         indexID,
-					IndexName:       "_default_idx",
-					IsDeleted:       false,
-					CreateTime:      10,
-					TypeParams:      nil,
-					IndexParams:     nil,
-					IsAutoIndex:     false,
-					UserIndexParams: nil,
-				},
+	im := index.NewIndexMetaForTest(catalog, map[UniqueID]map[UniqueID]*model.Index{
+		collID: {
+			indexID: {
+				TenantID:        "",
+				CollectionID:    collID,
+				FieldID:         meta.FieldID,
+				IndexID:         indexID,
+				IndexName:       "_default_idx",
+				IsDeleted:       false,
+				CreateTime:      10,
+				TypeParams:      nil,
+				IndexParams:     nil,
+				IsAutoIndex:     false,
+				UserIndexParams: nil,
 			},
 		},
-		SegmentBuildInfo: index.NewSegmentIndexBuildInfo(),
-	}
+	}, segmentIndexRecordsForTest(segIndexes)...)
 	mt := &meta.Meta{
 		Ctx:       ctx,
 		MetaStore: store,
 		Segments:  meta.NewSegmentsInfo(store),
 	}
-	im.SegmentBuildInfo.Add(&model.SegmentIndex{
+	im.PutBuildForTest(&model.SegmentIndex{
 		SegmentID:           segID,
 		CollectionID:        collID,
 		PartitionID:         partID,
@@ -1066,7 +990,7 @@ func createMetaTableForRecycleUnusedIndexFiles(catalog *datacoord.Catalog) (*met
 		IndexSerializedSize: 0,
 		WriteHandoff:        false,
 	})
-	im.SegmentBuildInfo.Add(&model.SegmentIndex{
+	im.PutBuildForTest(&model.SegmentIndex{
 		SegmentID:           segID + 1,
 		CollectionID:        collID,
 		PartitionID:         partID,
@@ -1222,16 +1146,8 @@ func TestGarbageCollector_recycleUnusedIndexFilesV0_TreatsMatchingV1CollectionID
 	// V1 indexes use a separate root, so a first-level dir under index_files/
 	// is always a legacy buildID candidate even if it numerically equals a v1 collectionID.
 	catalog := catalogmocks.NewDataCoordCatalog(t)
-	segIndexes := typeutil.NewConcurrentMap[UniqueID, *typeutil.ConcurrentMap[UniqueID, *model.SegmentIndex]]()
-
 	store := metacache.NewMetaStore(nil)
-	im := &index.IndexMeta{
-		Catalog:          catalog,
-		SegmentIndexes:   segIndexes,
-		Indexes:          map[UniqueID]map[UniqueID]*model.Index{},
-		SegmentBuildInfo: index.NewSegmentIndexBuildInfo(),
-		KeyLock:          lock.NewKeyLock[UniqueID](),
-	}
+	im := index.NewIndexMetaForTest(catalog, nil)
 	mt := &meta.Meta{
 		MetaStore: store,
 		Segments:  meta.NewSegmentsInfo(store),
@@ -1240,7 +1156,7 @@ func TestGarbageCollector_recycleUnusedIndexFilesV0_TreatsMatchingV1CollectionID
 	mt.CompactionProtection = sm
 
 	// Add a v1 index for collection 100
-	im.SegmentBuildInfo.Add(&model.SegmentIndex{
+	im.PutBuildForTest(&model.SegmentIndex{
 		BuildID:               2000,
 		CollectionID:          100,
 		PartitionID:           200,
@@ -1277,16 +1193,8 @@ func TestGarbageCollector_recycleUnusedIndexFilesV0_TreatsMatchingV1CollectionID
 
 func TestGarbageCollector_recycleUnusedIndexFilesV0_OnlyWalksLegacyPrefix(t *testing.T) {
 	catalog := catalogmocks.NewDataCoordCatalog(t)
-	segIndexes := typeutil.NewConcurrentMap[UniqueID, *typeutil.ConcurrentMap[UniqueID, *model.SegmentIndex]]()
-
 	store := metacache.NewMetaStore(nil)
-	im := &index.IndexMeta{
-		Catalog:          catalog,
-		SegmentIndexes:   segIndexes,
-		Indexes:          map[UniqueID]map[UniqueID]*model.Index{},
-		SegmentBuildInfo: index.NewSegmentIndexBuildInfo(),
-		KeyLock:          lock.NewKeyLock[UniqueID](),
-	}
+	im := index.NewIndexMetaForTest(catalog, nil)
 	mt := &meta.Meta{
 		MetaStore: store,
 		Segments:  meta.NewSegmentsInfo(store),
@@ -1294,7 +1202,7 @@ func TestGarbageCollector_recycleUnusedIndexFilesV0_OnlyWalksLegacyPrefix(t *tes
 	sm := &snapshot.SnapshotMeta{}
 	mt.CompactionProtection = sm
 
-	im.SegmentBuildInfo.Add(&model.SegmentIndex{
+	im.PutBuildForTest(&model.SegmentIndex{
 		BuildID:               2000,
 		CollectionID:          100,
 		PartitionID:           200,
@@ -1304,7 +1212,7 @@ func TestGarbageCollector_recycleUnusedIndexFilesV0_OnlyWalksLegacyPrefix(t *tes
 		IndexState:            commonpb.IndexState_Finished,
 		IndexFileKeys:         []string{"v0-file"},
 	})
-	im.SegmentBuildInfo.Add(&model.SegmentIndex{
+	im.PutBuildForTest(&model.SegmentIndex{
 		BuildID:               3000,
 		CollectionID:          100,
 		PartitionID:           200,
@@ -1343,16 +1251,8 @@ func TestGarbageCollector_recycleUnusedIndexFilesV0_OnlyWalksLegacyPrefix(t *tes
 
 func TestGarbageCollector_recycleUnusedIndexFilesV0_IgnoresV1MetadataUnderSeparatePrefix(t *testing.T) {
 	catalog := catalogmocks.NewDataCoordCatalog(t)
-	segIndexes := typeutil.NewConcurrentMap[UniqueID, *typeutil.ConcurrentMap[UniqueID, *model.SegmentIndex]]()
-
 	store := metacache.NewMetaStore(nil)
-	im := &index.IndexMeta{
-		Catalog:          catalog,
-		SegmentIndexes:   segIndexes,
-		Indexes:          map[UniqueID]map[UniqueID]*model.Index{},
-		SegmentBuildInfo: index.NewSegmentIndexBuildInfo(),
-		KeyLock:          lock.NewKeyLock[UniqueID](),
-	}
+	im := index.NewIndexMetaForTest(catalog, nil)
 	mt := &meta.Meta{
 		MetaStore: store,
 		Segments:  meta.NewSegmentsInfo(store),
@@ -1365,7 +1265,7 @@ func TestGarbageCollector_recycleUnusedIndexFilesV0_IgnoresV1MetadataUnderSepara
 	cm.EXPECT().RootPath().Return("root")
 	cm.EXPECT().WalkWithPrefix(mock.Anything, "root/index_files/", false, mock.Anything).RunAndReturn(
 		func(ctx context.Context, s string, b bool, cowf storage.ChunkObjectWalkFunc) error {
-			im.SegmentBuildInfo.Add(&model.SegmentIndex{
+			im.PutBuildForTest(&model.SegmentIndex{
 				BuildID:               3000,
 				CollectionID:          100,
 				PartitionID:           200,
@@ -1430,13 +1330,7 @@ func testRecycleUnusedIndexFiles(t *testing.T, version indexpb.IndexStorePathVer
 	)
 	newMeta := func(t *testing.T) (*meta.Meta, *snapshot.SnapshotTestMetas) {
 		store := metacache.NewMetaStore(nil)
-		im := &index.IndexMeta{
-			Catalog:          catalogmocks.NewDataCoordCatalog(t),
-			SegmentIndexes:   typeutil.NewConcurrentMap[UniqueID, *typeutil.ConcurrentMap[UniqueID, *model.SegmentIndex]](),
-			Indexes:          map[UniqueID]map[UniqueID]*model.Index{},
-			SegmentBuildInfo: index.NewSegmentIndexBuildInfo(),
-			KeyLock:          lock.NewKeyLock[UniqueID](),
-		}
+		im := index.NewIndexMetaForTest(catalogmocks.NewDataCoordCatalog(t), nil)
 		m := &meta.Meta{
 			MetaStore: store,
 			Segments:  meta.NewSegmentsInfo(store),
@@ -1448,7 +1342,7 @@ func testRecycleUnusedIndexFiles(t *testing.T, version indexpb.IndexStorePathVer
 		sm := &snapshot.SnapshotMeta{}
 		m.CompactionProtection = sm
 		add := func(buildID UniqueID, state commonpb.IndexState, keys []string) {
-			im.SegmentBuildInfo.Add(&model.SegmentIndex{
+			im.PutBuildForTest(&model.SegmentIndex{
 				BuildID: buildID, CollectionID: collID, PartitionID: partID, SegmentID: segID, IndexID: indexID,
 				IndexVersion: 2, IndexStorePathVersion: version,
 				IndexState: state, IndexFileKeys: keys,
@@ -1951,29 +1845,23 @@ func TestGarbageCollector_clearETCD(t *testing.T) {
 	})
 	segIndexes.Insert(meta.SegID, segIdx0)
 	segIndexes.Insert(meta.SegID+1, segIdx1)
-	im := &index.IndexMeta{
-		KeyLock:          lock.NewKeyLock[UniqueID](),
-		Catalog:          catalog,
-		SegmentIndexes:   segIndexes,
-		SegmentBuildInfo: index.NewSegmentIndexBuildInfo(),
-		Indexes: map[UniqueID]map[UniqueID]*model.Index{
-			meta.CollID: {
-				meta.IndexID: {
-					TenantID:        "",
-					CollectionID:    meta.CollID,
-					FieldID:         meta.FieldID,
-					IndexID:         meta.IndexID,
-					IndexName:       meta.IndexName,
-					IsDeleted:       false,
-					CreateTime:      0,
-					TypeParams:      nil,
-					IndexParams:     nil,
-					IsAutoIndex:     false,
-					UserIndexParams: nil,
-				},
+	im := index.NewIndexMetaForTest(catalog, map[UniqueID]map[UniqueID]*model.Index{
+		meta.CollID: {
+			meta.IndexID: {
+				TenantID:        "",
+				CollectionID:    meta.CollID,
+				FieldID:         meta.FieldID,
+				IndexID:         meta.IndexID,
+				IndexName:       meta.IndexName,
+				IsDeleted:       false,
+				CreateTime:      0,
+				TypeParams:      nil,
+				IndexParams:     nil,
+				IsAutoIndex:     false,
+				UserIndexParams: nil,
 			},
 		},
-	}
+	}, segmentIndexRecordsForTest(segIndexes)...)
 	sm := &snapshot.SnapshotMeta{}
 	m := &meta.Meta{
 		Catalog:   catalog,
@@ -1985,7 +1873,7 @@ func TestGarbageCollector_clearETCD(t *testing.T) {
 		"dmlChannel": {Timestamp: 1000},
 	})
 
-	im.SegmentBuildInfo.Add(&model.SegmentIndex{
+	im.PutBuildForTest(&model.SegmentIndex{
 		SegmentID:           meta.SegID,
 		CollectionID:        meta.CollID,
 		PartitionID:         meta.PartID,
@@ -2003,7 +1891,7 @@ func TestGarbageCollector_clearETCD(t *testing.T) {
 		WriteHandoff:        false,
 	})
 
-	im.SegmentBuildInfo.Add(&model.SegmentIndex{
+	im.PutBuildForTest(&model.SegmentIndex{
 		SegmentID:           meta.SegID + 1,
 		CollectionID:        meta.CollID,
 		PartitionID:         meta.PartID,
@@ -2923,9 +2811,7 @@ func TestGarbageCollector_recycleDroppedSegments_NoIndexCollection(t *testing.T)
 			catalog := catalogmocks.NewDataCoordCatalog(t)
 
 			store := metacache.NewMetaStore(catalog)
-			im := &index.IndexMeta{
-				Indexes: test.indexes,
-			}
+			im := index.NewIndexMetaForTest(nil, test.indexes)
 			mt := &meta.Meta{
 				Catalog:   catalog,
 				MetaStore: store,
@@ -2994,7 +2880,7 @@ func TestGarbageCollector_recycleDroppedSegments_LoadedSegments(t *testing.T) {
 			checkpointCatalog := MockCheckpointCatalog(t, 1000)
 
 			store := metacache.NewMetaStore(catalog)
-			im := &index.IndexMeta{Indexes: make(map[UniqueID]map[UniqueID]*model.Index)}
+			im := index.NewIndexMetaForTest(nil, nil)
 			mt := &meta.Meta{
 				Catalog:   catalog,
 				MetaStore: store,
@@ -3060,18 +2946,13 @@ func setupDroppedSegmentWithIndexForGC(t *testing.T) (*meta.Meta, *snapshot.Snap
 	}
 	require.NoError(t, m.AddSegment(ctx, segment))
 
-	if dm.IndexMeta.Indexes == nil {
-		dm.IndexMeta.Indexes = make(map[UniqueID]map[UniqueID]*model.Index)
-	}
-	dm.IndexMeta.Indexes[collID] = map[UniqueID]*model.Index{
-		indexID: {
-			CollectionID: collID,
-			FieldID:      fieldID,
-			IndexID:      indexID,
-			IndexName:    "deleted-index",
-			IsDeleted:    true,
-		},
-	}
+	dm.IndexMeta.PutIndexesForTest(&model.Index{
+		CollectionID: collID,
+		FieldID:      fieldID,
+		IndexID:      indexID,
+		IndexName:    "deleted-index",
+		IsDeleted:    true,
+	})
 	segIdx := &model.SegmentIndex{
 		SegmentID:             segID,
 		CollectionID:          collID,
@@ -4378,8 +4259,8 @@ func TestGarbageCollector_recycleUnusedSegIndexes_BatchesSameSegmentManifestRetr
 	assert.Equal(t, 1, store.ReadCount, "read ownership once; commit returns its marker without a read")
 	assert.True(t, m.GetSegment(context.TODO(), 4001).GetManifestHasIndex())
 	assert.Equal(t, 1, store.CommitCount)
-	_, firstExists := dm.IndexMeta.SegmentBuildInfo.Get(4100)
-	_, secondExists := dm.IndexMeta.SegmentBuildInfo.Get(4200)
+	_, firstExists := dm.IndexMeta.Store().GetSegmentIndexByBuildID(4100)
+	_, secondExists := dm.IndexMeta.Store().GetSegmentIndexByBuildID(4200)
 	assert.False(t, firstExists)
 	assert.False(t, secondExists)
 	assert.Equal(t, newManifest, m.GetSegment(context.TODO(), 4001).GetManifestPath())
@@ -4414,8 +4295,8 @@ func TestGarbageCollector_recycleUnusedSegIndexes_BatchCommitsOnlyDeletedFiles(t
 	gc := NewGarbageCollector(m, nil, GcTestDomainOption(dm, GcOption{Cli: cm}))
 	gc.RecycleUnusedSegIndexes(context.TODO(), nil)
 
-	_, firstExists := dm.IndexMeta.SegmentBuildInfo.Get(4100)
-	_, secondExists := dm.IndexMeta.SegmentBuildInfo.Get(4200)
+	_, firstExists := dm.IndexMeta.Store().GetSegmentIndexByBuildID(4100)
+	_, secondExists := dm.IndexMeta.Store().GetSegmentIndexByBuildID(4200)
 	assert.False(t, firstExists)
 	assert.True(t, secondExists, "a failed file deletion must leave its manifest entry and etcd record for retry")
 	assert.Equal(t, newManifest, m.GetSegment(context.TODO(), 4001).GetManifestPath())
@@ -4439,8 +4320,8 @@ func TestGarbageCollector_recycleUnusedSegIndexes_MixedManifestAndLegacyOwnershi
 	assert.False(t, m.GetSegment(context.TODO(), 4001).GetManifestHasIndex())
 	assert.Equal(t, 1, store.CommitCount)
 	assert.Empty(t, store.Revisions[newManifest])
-	_, manifestOwnedExists := dm.IndexMeta.SegmentBuildInfo.Get(4100)
-	_, recordOwnedExists := dm.IndexMeta.SegmentBuildInfo.Get(4200)
+	_, manifestOwnedExists := dm.IndexMeta.Store().GetSegmentIndexByBuildID(4100)
+	_, recordOwnedExists := dm.IndexMeta.Store().GetSegmentIndexByBuildID(4200)
 	assert.False(t, manifestOwnedExists)
 	assert.False(t, recordOwnedExists)
 }
@@ -4468,8 +4349,8 @@ func TestGarbageCollector_recycleUnusedSegIndexes_BatchKeepsSnapshotPinnedIndex(
 	assert.Equal(t, 1, store.CommitCount)
 	require.Len(t, store.Revisions[newManifest], 1)
 	assert.Equal(t, int64(401), store.Revisions[newManifest][0].IndexID)
-	_, unpinnedExists := dm.IndexMeta.SegmentBuildInfo.Get(4100)
-	_, pinnedExists := dm.IndexMeta.SegmentBuildInfo.Get(4200)
+	_, unpinnedExists := dm.IndexMeta.Store().GetSegmentIndexByBuildID(4100)
+	_, pinnedExists := dm.IndexMeta.Store().GetSegmentIndexByBuildID(4200)
 	assert.False(t, unpinnedExists)
 	assert.True(t, pinnedExists)
 }
@@ -4493,8 +4374,8 @@ func TestGarbageCollector_recycleUnusedSegIndexes_BatchCatalogFailureRetriesAtom
 	gc.RecycleUnusedSegIndexes(context.TODO(), nil)
 
 	assert.Equal(t, originalManifest, m.GetSegment(context.TODO(), 4001).GetManifestPath())
-	_, firstExists := dm.IndexMeta.SegmentBuildInfo.Get(4100)
-	_, secondExists := dm.IndexMeta.SegmentBuildInfo.Get(4200)
+	_, firstExists := dm.IndexMeta.Store().GetSegmentIndexByBuildID(4100)
+	_, secondExists := dm.IndexMeta.Store().GetSegmentIndexByBuildID(4200)
 	assert.True(t, firstExists)
 	assert.True(t, secondExists)
 	assert.Equal(t, 1, store.CommitCount, "the failed catalog write may leave only an unreachable manifest revision")
@@ -4502,8 +4383,8 @@ func TestGarbageCollector_recycleUnusedSegIndexes_BatchCatalogFailureRetriesAtom
 	failCatalog.UnPatch()
 	gc.RecycleUnusedSegIndexes(context.TODO(), nil)
 	assert.Equal(t, newManifest, m.GetSegment(context.TODO(), 4001).GetManifestPath())
-	_, firstExists = dm.IndexMeta.SegmentBuildInfo.Get(4100)
-	_, secondExists = dm.IndexMeta.SegmentBuildInfo.Get(4200)
+	_, firstExists = dm.IndexMeta.Store().GetSegmentIndexByBuildID(4100)
+	_, secondExists = dm.IndexMeta.Store().GetSegmentIndexByBuildID(4200)
 	assert.False(t, firstExists)
 	assert.False(t, secondExists)
 }
@@ -4529,8 +4410,8 @@ func TestGarbageCollector_recycleUnusedSegIndexes_SplitsAtCatalogTransactionLimi
 	assert.Equal(t, 1, store.ReadCount, "one ownership read; neither commit rereads its marker")
 	assert.Equal(t, 2, store.CommitCount)
 	assert.False(t, m.GetSegment(context.TODO(), 4001).GetManifestHasIndex())
-	_, firstExists := dm.IndexMeta.SegmentBuildInfo.Get(4100)
-	_, secondExists := dm.IndexMeta.SegmentBuildInfo.Get(4200)
+	_, firstExists := dm.IndexMeta.Store().GetSegmentIndexByBuildID(4100)
+	_, secondExists := dm.IndexMeta.Store().GetSegmentIndexByBuildID(4200)
 	assert.False(t, firstExists)
 	assert.False(t, secondExists)
 	assert.Equal(t, packed.MarshalManifestPath("/tmp/test-gc-v3-retract/insert_log/100/10/4001", 5),
@@ -4555,7 +4436,7 @@ func TestGarbageCollector_recycleUnusedSegIndexes_UnmarkedUsesLegacyPathWithoutM
 	gc.RecycleUnusedSegIndexes(context.TODO(), nil)
 
 	assert.Zero(t, manifestReads)
-	_, exists := dm.IndexMeta.SegmentBuildInfo.Get(4100)
+	_, exists := dm.IndexMeta.Store().GetSegmentIndexByBuildID(4100)
 	assert.False(t, exists)
 	assert.Equal(t, packed.MarshalManifestPath("/tmp/test-gc-v3-retract/insert_log/100/10/4001", 3),
 		m.GetSegment(context.TODO(), 4001).GetManifestPath())
@@ -4584,7 +4465,7 @@ func TestGarbageCollector_recycleUnusedSegIndexes_V3DeletesFilesBeforeMeta(t *te
 		mu.Lock()
 		defer mu.Unlock()
 		if len(removed) == 0 {
-			_, metaPresentAtFirstRemove = dm.IndexMeta.SegmentBuildInfo.Get(4100)
+			_, metaPresentAtFirstRemove = dm.IndexMeta.Store().GetSegmentIndexByBuildID(4100)
 		}
 		removed = append(removed, file)
 		return nil
@@ -4596,7 +4477,7 @@ func TestGarbageCollector_recycleUnusedSegIndexes_V3DeletesFilesBeforeMeta(t *te
 	assert.True(t, metaPresentAtFirstRemove, "artifact deletion must start while the metadata naming it still exists")
 	// The retraction still lands, and still atomically: manifest pointer
 	// advanced and the record gone in the same catalog transaction.
-	_, ok := dm.IndexMeta.SegmentBuildInfo.Get(4100)
+	_, ok := dm.IndexMeta.Store().GetSegmentIndexByBuildID(4100)
 	assert.False(t, ok)
 	assert.Equal(t, newManifest, m.GetSegment(context.TODO(), 4001).GetManifestPath())
 	// Both the record's own file keys and the manifest entry's paths are deleted.
@@ -4620,7 +4501,7 @@ func TestGarbageCollector_recycleUnusedSegIndexes_V3FileDeletionFailureRetriesFr
 	gc := NewGarbageCollector(m, nil, GcTestDomainOption(dm, GcOption{Cli: cm}))
 	gc.RecycleUnusedSegIndexes(context.TODO(), nil)
 
-	_, ok := dm.IndexMeta.SegmentBuildInfo.Get(4100)
+	_, ok := dm.IndexMeta.Store().GetSegmentIndexByBuildID(4100)
 	assert.True(t, ok, "a failed delete must leave the record to re-drive the retry from")
 	assert.Equal(t, originalManifest, m.GetSegment(context.TODO(), 4001).GetManifestPath(),
 		"the manifest entry must not be retracted while its bytes are still there")
@@ -4643,7 +4524,7 @@ func TestGarbageCollector_recycleUnusedSegIndexes_NonManifestKeepsLegacyOrder(t 
 	gc := NewGarbageCollector(m, nil, GcTestDomainOption(dm, GcOption{Cli: cm}))
 	gc.RecycleUnusedSegIndexes(context.TODO(), nil)
 
-	_, ok := dm.IndexMeta.SegmentBuildInfo.Get(4100)
+	_, ok := dm.IndexMeta.Store().GetSegmentIndexByBuildID(4100)
 	assert.True(t, ok, "files-first ordering must leave the record for the next cycle")
 }
 
@@ -4693,8 +4574,8 @@ func TestGarbageCollector_DroppedSegmentIndexFilesComeFromManifestAfterReload(t 
 	require.EqualValues(t, 5300, recovered[0].BuildID)
 
 	// Model a missing projection separately from the restart contract.
-	dm.IndexMeta.SegmentBuildInfo.Remove(5300)
-	dm.IndexMeta.SegmentIndexes.Remove(segmentID)
+	// Removing the only build also drops it as the segment's current record.
+	dm.IndexMeta.RemoveBuildForTest(5300)
 
 	gc := NewGarbageCollector(m, meta.NewMockHandler(), GcTestDomainOption(dm, GcOption{
 		Cli: storage.NewLocalChunkManager(objectstorage.RootPath("/tmp/test")),
@@ -5023,4 +4904,15 @@ func TestGarbageCollectorIsPaused(t *testing.T) {
 	_, err = gc.pauseUntil.Insert("t", time.Now().Add(time.Hour))
 	require.NoError(t, err)
 	assert.True(t, gc.IsPaused(2), "a global pause covers every collection")
+}
+
+// segmentIndexRecordsForTest flattens a segment ID -> index ID -> record map
+// into the records it holds.
+func segmentIndexRecordsForTest(segIndexes *typeutil.ConcurrentMap[UniqueID, *typeutil.ConcurrentMap[UniqueID, *model.SegmentIndex]]) []*model.SegmentIndex {
+	var records []*model.SegmentIndex
+	segIndexes.Range(func(_ UniqueID, indexes *typeutil.ConcurrentMap[UniqueID, *model.SegmentIndex]) bool {
+		records = append(records, indexes.Values()...)
+		return true
+	})
+	return records
 }

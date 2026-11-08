@@ -621,9 +621,7 @@ func TestGetDistJSON(t *testing.T) {
 }
 
 func TestServer_getSegmentsJSON(t *testing.T) {
-	segIndexes := typeutil.NewConcurrentMap[UniqueID, *typeutil.ConcurrentMap[UniqueID, *model.SegmentIndex]]()
-	segIdx0 := typeutil.NewConcurrentMap[UniqueID, *model.SegmentIndex]()
-	segIdx0.Insert(10, &model.SegmentIndex{
+	segIdx0 := &model.SegmentIndex{
 		SegmentID:           1000,
 		CollectionID:        1,
 		PartitionID:         2,
@@ -638,8 +636,7 @@ func TestServer_getSegmentsJSON(t *testing.T) {
 		CreatedUTCTime:      12,
 		IndexFileKeys:       nil,
 		IndexSerializedSize: 0,
-	})
-	segIndexes.Insert(1000, segIdx0)
+	}
 	s := &Server{
 		meta: &meta.Meta{
 			Segments: meta.NewSegmentsInfoWithSegments(map[int64]*meta.SegmentInfo{
@@ -654,20 +651,17 @@ func TestServer_getSegmentsJSON(t *testing.T) {
 			}),
 		},
 		domainMetas: domainMetas{
-			indexMeta: &index.IndexMeta{
-				SegmentIndexes: segIndexes,
-				Indexes: map[UniqueID]map[UniqueID]*model.Index{
-					1: {
-						10: &model.Index{
-							CollectionID: 1,
-							FieldID:      100,
-							IndexID:      10,
-							IndexName:    "test_index",
-							IsDeleted:    false,
-						},
+			indexMeta: index.NewIndexMetaForTest(nil, map[UniqueID]map[UniqueID]*model.Index{
+				1: {
+					10: &model.Index{
+						CollectionID: 1,
+						FieldID:      100,
+						IndexID:      10,
+						IndexName:    "test_index",
+						IsDeleted:    false,
 					},
 				},
-			},
+			}, segIdx0),
 		},
 	}
 

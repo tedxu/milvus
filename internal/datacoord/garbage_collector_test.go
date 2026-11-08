@@ -182,7 +182,7 @@ func TestGarbageCollector_recycleUnusedSegIndexes_SnapshotReference(t *testing.T
 	smMeta := &snapshot.SnapshotMeta{}
 
 	// Mock newIndexMeta
-	idxMeta := &index.IndexMeta{}
+	idxMeta := index.NewSegmentIndexMeta(nil)
 
 	// Create meta
 	im := idxMeta
@@ -308,7 +308,7 @@ func TestGarbageCollector_recycleUnusedBinlogFiles_SnapshotReference(t *testing.
 	}
 
 	// Create meta with segment
-	im := &index.IndexMeta{}
+	im := index.NewSegmentIndexMeta(nil)
 	sm := &snapshot.SnapshotMeta{}
 	mt := &meta.Meta{
 		Catalog: &datacoord.Catalog{},
@@ -384,7 +384,7 @@ func TestGarbageCollector_recycleUnusedBinlogFiles_V3Orphan(t *testing.T) {
 		},
 	}
 
-	im := &index.IndexMeta{}
+	im := index.NewSegmentIndexMeta(nil)
 	sm := &snapshot.SnapshotMeta{}
 	mt := &meta.Meta{
 		Catalog: &datacoord.Catalog{},
@@ -548,7 +548,7 @@ func TestGarbageCollector_recycleUnusedIndexFilesV0_SnapshotReference(t *testing
 	smMeta := &snapshot.SnapshotMeta{}
 
 	// Create meta
-	im := &index.IndexMeta{}
+	im := index.NewSegmentIndexMeta(nil)
 	sm := smMeta
 	mt := &meta.Meta{
 		Catalog:   catalog,
@@ -861,7 +861,7 @@ func TestGarbageCollector_recycleUnusedBinlogFiles_SkipWhenRefIndexNotLoaded(t *
 		},
 	}
 
-	im := &index.IndexMeta{}
+	im := index.NewSegmentIndexMeta(nil)
 	sm := &snapshot.SnapshotMeta{}
 	mt := &meta.Meta{
 		Catalog:   &datacoord.Catalog{},
@@ -1073,7 +1073,7 @@ func TestGarbageCollector_recycleUnusedIndexFilesV0_SegIdxNil_SnapshotProtection
 	cli := storage.NewLocalChunkManager(objectstorage.RootPath("/tmp/test"))
 
 	smMeta := &snapshot.SnapshotMeta{}
-	im := &index.IndexMeta{}
+	im := index.NewSegmentIndexMeta(nil)
 	sm := smMeta
 	mt := &meta.Meta{
 		Catalog:   &datacoord.Catalog{},
@@ -1144,7 +1144,7 @@ func TestGarbageCollector_recycleUnusedBinlogFiles_SegmentNil_SnapshotProtection
 	cli := storage.NewLocalChunkManager(objectstorage.RootPath("/tmp/test"))
 
 	// Create meta with NO segments (segment is nil)
-	im := &index.IndexMeta{}
+	im := index.NewSegmentIndexMeta(nil)
 	sm := &snapshot.SnapshotMeta{}
 	mt := &meta.Meta{
 		Catalog:   &datacoord.Catalog{},
@@ -1568,7 +1568,7 @@ func TestGarbageCollector_recycleUnusedBinlogFiles_TextAndJSONStats(t *testing.T
 		},
 	}
 
-	im := &index.IndexMeta{}
+	im := index.NewSegmentIndexMeta(nil)
 	sm := &snapshot.SnapshotMeta{}
 	mt := &meta.Meta{
 		Catalog:   &datacoord.Catalog{},
@@ -1624,7 +1624,7 @@ func TestGarbageCollector_recycleUnusedBinlogFiles_TextAndJSONStats(t *testing.T
 func TestGarbageCollector_recycleUnusedBinlogFiles_TextAndJSONStats_SegmentNil(t *testing.T) {
 	ctx := context.Background()
 
-	im := &index.IndexMeta{}
+	im := index.NewSegmentIndexMeta(nil)
 	sm := &snapshot.SnapshotMeta{}
 	mt := &meta.Meta{
 		Catalog:   &datacoord.Catalog{},

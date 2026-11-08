@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"github.com/milvus-io/milvus/internal/datacoord/meta"
+	"github.com/milvus-io/milvus/internal/metacache"
 	"github.com/milvus-io/milvus/internal/metastore"
 	"github.com/milvus-io/milvus/internal/storage"
 )
@@ -28,7 +29,7 @@ import (
 func newMemoryMetaWithDomainMetas(t *testing.T) (*meta.Meta, *domainMetas, error) {
 	dm := &domainMetas{}
 	m, err := meta.NewMemoryMetaWithLoader(t, func(catalog metastore.DataCoordCatalog, cm storage.ChunkManager) meta.DomainMetaLoader {
-		return loadDomainMetas(catalog, cm, dm)
+		return loadDomainMetas(catalog, cm, metacache.NewMetaStore(nil), dm)
 	})
 	return m, dm, err
 }

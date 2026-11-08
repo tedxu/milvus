@@ -177,7 +177,7 @@ func (suite *MetaReloadSuite) TestReloadFromKV() {
 		suite.catalog.EXPECT().ListExternalCollectionRefreshJobs(mock.Anything).Return(nil, nil)
 		suite.catalog.EXPECT().ListExternalCollectionRefreshTasks(mock.Anything).Return(nil, nil)
 
-		_, err := meta.NewMeta(ctx, suite.catalog, nil, meta.NewMetaStoreWithCollections(suite.catalog, 100), brk, loadDomainMetas(suite.catalog, nil, &domainMetas{}))
+		_, err := meta.NewMeta(ctx, suite.catalog, nil, meta.NewMetaStoreWithCollections(suite.catalog, 100), brk, loadDomainMetas(suite.catalog, nil, metacache.NewMetaStore(nil), &domainMetas{}))
 		suite.Error(err)
 	})
 
@@ -197,7 +197,7 @@ func (suite *MetaReloadSuite) TestReloadFromKV() {
 		suite.catalog.EXPECT().ListExternalCollectionRefreshJobs(mock.Anything).Return(nil, nil)
 		suite.catalog.EXPECT().ListExternalCollectionRefreshTasks(mock.Anything).Return(nil, nil)
 
-		_, err := meta.NewMeta(ctx, suite.catalog, nil, metacache.NewMetaStore(suite.catalog), brk, loadDomainMetas(suite.catalog, nil, &domainMetas{}))
+		_, err := meta.NewMeta(ctx, suite.catalog, nil, metacache.NewMetaStore(suite.catalog), brk, loadDomainMetas(suite.catalog, nil, metacache.NewMetaStore(nil), &domainMetas{}))
 		suite.Error(err)
 	})
 
@@ -240,7 +240,7 @@ func (suite *MetaReloadSuite) TestReloadFromKV() {
 		suite.catalog.EXPECT().ListExternalCollectionRefreshTasks(mock.Anything).Return(nil, nil)
 
 		dm := &domainMetas{}
-		_, err := meta.NewMeta(ctx, suite.catalog, nil, meta.NewMetaStoreWithCollections(suite.catalog, 1), brk, loadDomainMetas(suite.catalog, nil, dm))
+		_, err := meta.NewMeta(ctx, suite.catalog, nil, meta.NewMetaStoreWithCollections(suite.catalog, 1), brk, loadDomainMetas(suite.catalog, nil, metacache.NewMetaStore(nil), dm))
 		suite.NoError(err)
 		suite.NotNil(dm.compactionTargetMeta)
 		suite.Equal(datapb.TargetState_TARGET_STATE_ACTIVE, dm.compactionTargetMeta.GetCompactionTarget(10).GetState())
@@ -263,7 +263,7 @@ func (suite *MetaReloadSuite) TestReloadFromKV() {
 		suite.catalog.EXPECT().ListExternalCollectionRefreshJobs(mock.Anything).Return(nil, nil)
 		suite.catalog.EXPECT().ListExternalCollectionRefreshTasks(mock.Anything).Return(nil, nil)
 
-		_, err := meta.NewMeta(ctx, suite.catalog, nil, metacache.NewMetaStore(suite.catalog), brk, loadDomainMetas(suite.catalog, nil, &domainMetas{}))
+		_, err := meta.NewMeta(ctx, suite.catalog, nil, metacache.NewMetaStore(suite.catalog), brk, loadDomainMetas(suite.catalog, nil, metacache.NewMetaStore(nil), &domainMetas{}))
 		suite.Error(err)
 	})
 
@@ -282,7 +282,7 @@ func (suite *MetaReloadSuite) TestReloadFromKV() {
 		suite.catalog.EXPECT().ListExternalCollectionRefreshJobs(mock.Anything).Return(nil, nil)
 		suite.catalog.EXPECT().ListExternalCollectionRefreshTasks(mock.Anything).Return(nil, nil)
 
-		_, err := meta.NewMeta(ctx, suite.catalog, nil, metacache.NewMetaStore(suite.catalog), brk, loadDomainMetas(suite.catalog, nil, &domainMetas{}))
+		_, err := meta.NewMeta(ctx, suite.catalog, nil, metacache.NewMetaStore(suite.catalog), brk, loadDomainMetas(suite.catalog, nil, metacache.NewMetaStore(nil), &domainMetas{}))
 		suite.Error(err)
 	})
 
@@ -301,7 +301,7 @@ func (suite *MetaReloadSuite) TestReloadFromKV() {
 		suite.catalog.EXPECT().ListExternalCollectionRefreshJobs(mock.Anything).Return(nil, nil)
 		suite.catalog.EXPECT().ListExternalCollectionRefreshTasks(mock.Anything).Return(nil, nil)
 
-		_, err := meta.NewMeta(ctx, suite.catalog, nil, metacache.NewMetaStore(suite.catalog), brk, loadDomainMetas(suite.catalog, nil, &domainMetas{}))
+		_, err := meta.NewMeta(ctx, suite.catalog, nil, metacache.NewMetaStore(suite.catalog), brk, loadDomainMetas(suite.catalog, nil, metacache.NewMetaStore(nil), &domainMetas{}))
 		suite.Error(err)
 	})
 
@@ -320,7 +320,7 @@ func (suite *MetaReloadSuite) TestReloadFromKV() {
 		suite.catalog.EXPECT().ListExternalCollectionRefreshJobs(mock.Anything).Return(nil, nil)
 		suite.catalog.EXPECT().ListExternalCollectionRefreshTasks(mock.Anything).Return(nil, nil)
 
-		_, err := meta.NewMeta(ctx, suite.catalog, nil, metacache.NewMetaStore(suite.catalog), brk, loadDomainMetas(suite.catalog, nil, &domainMetas{}))
+		_, err := meta.NewMeta(ctx, suite.catalog, nil, metacache.NewMetaStore(suite.catalog), brk, loadDomainMetas(suite.catalog, nil, metacache.NewMetaStore(nil), &domainMetas{}))
 		suite.Error(err)
 	})
 
@@ -339,7 +339,7 @@ func (suite *MetaReloadSuite) TestReloadFromKV() {
 		suite.catalog.EXPECT().ListExternalCollectionRefreshJobs(mock.Anything).Return(nil, nil)
 		suite.catalog.EXPECT().ListExternalCollectionRefreshTasks(mock.Anything).Return(nil, nil)
 
-		_, err := meta.NewMeta(ctx, suite.catalog, nil, metacache.NewMetaStore(suite.catalog), brk, loadDomainMetas(suite.catalog, nil, &domainMetas{}))
+		_, err := meta.NewMeta(ctx, suite.catalog, nil, metacache.NewMetaStore(suite.catalog), brk, loadDomainMetas(suite.catalog, nil, metacache.NewMetaStore(nil), &domainMetas{}))
 		suite.Error(err)
 	})
 
@@ -358,7 +358,7 @@ func (suite *MetaReloadSuite) TestReloadFromKV() {
 		suite.catalog.EXPECT().ListExternalCollectionRefreshJobs(mock.Anything).Return(nil, nil)
 		suite.catalog.EXPECT().ListExternalCollectionRefreshTasks(mock.Anything).Return(nil, nil)
 
-		_, err := meta.NewMeta(ctx, suite.catalog, nil, metacache.NewMetaStore(suite.catalog), brk, loadDomainMetas(suite.catalog, nil, &domainMetas{}))
+		_, err := meta.NewMeta(ctx, suite.catalog, nil, metacache.NewMetaStore(suite.catalog), brk, loadDomainMetas(suite.catalog, nil, metacache.NewMetaStore(nil), &domainMetas{}))
 		suite.Error(err)
 	})
 
@@ -388,7 +388,7 @@ func (suite *MetaReloadSuite) TestReloadFromKV() {
 				}, nil
 			})
 
-		mt, err := meta.NewMeta(ctx, suite.catalog, nil, meta.NewMetaStoreWithCollections(suite.catalog, 100, 101, 102, 200, 201, 202), brk, loadDomainMetas(suite.catalog, nil, &domainMetas{}))
+		mt, err := meta.NewMeta(ctx, suite.catalog, nil, meta.NewMetaStoreWithCollections(suite.catalog, 100, 101, 102, 200, 201, 202), brk, loadDomainMetas(suite.catalog, nil, metacache.NewMetaStore(nil), &domainMetas{}))
 		suite.NoError(err)
 		for _, collectionID := range []int64{100, 101, 102, 200, 201, 202} {
 			segments := mt.GetSegmentsOfCollection(ctx, collectionID)

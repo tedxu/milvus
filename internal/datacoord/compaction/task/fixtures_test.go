@@ -25,6 +25,7 @@ import (
 	"github.com/milvus-io/milvus/internal/datacoord/meta"
 	"github.com/milvus-io/milvus/internal/datacoord/partitionstats"
 	"github.com/milvus-io/milvus/internal/datacoord/snapshot"
+	"github.com/milvus-io/milvus/internal/metacache"
 	"github.com/milvus-io/milvus/internal/metastore"
 	"github.com/milvus-io/milvus/internal/storage"
 )
@@ -44,7 +45,7 @@ type compactionTaskTestMetas struct {
 func loadCompactionTaskTestMetas(catalog metastore.DataCoordCatalog, cm storage.ChunkManager, out *compactionTaskTestMetas) meta.DomainMetaLoader {
 	return func(ctx context.Context, collectionIDs []int64) (meta.SegmentIndexCatalog, meta.CompactionProtection, error) {
 		var err error
-		if out.indexMeta, err = index.NewIndexMeta(ctx, catalog, collectionIDs); err != nil {
+		if out.indexMeta, err = index.NewIndexMeta(ctx, catalog, metacache.NewMetaStore(nil), collectionIDs); err != nil {
 			return nil, nil, err
 		}
 		if out.analyzeMeta, err = analyze.NewAnalyzeMeta(ctx, catalog); err != nil {
