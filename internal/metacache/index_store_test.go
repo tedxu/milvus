@@ -165,3 +165,30 @@ func TestIndexStoreUpdateSegmentIndexBuild(t *testing.T) {
 		})
 	}
 }
+
+// DataCoord retries recovery against the same store, so a load must replace
+// whatever an earlier, failed attempt left behind.
+func TestIndexStoreLoadReplacesPreviousContents(t *testing.T) {
+	s := NewMetaStore(nil)
+	s.LoadIndexes(
+		[]*model.Index{{CollectionID: 1, IndexID: 100}, {CollectionID: 2, IndexID: 200}},
+		[]*model.SegmentIndex{segIdx(10, 100, 1), segIdx(20, 200, 2)},
+	)
+	s.PutSegmentIndexes(segIdx(30, 100, 3))
+
+	s.LoadIndexes([]*model.Index{{CollectionID: 1, IndexID: 100}}, []*model.SegmentIndex{segIdx(10, 100, 1)})
+
+	assert.Len(t, s.ListAllIndexes(), 1)
+	_, ok := s.GetIndex(2, 200)
+	assert.False(t, ok, "a definition from the earlier attempt must not survive")
+	assert.Len(t, s.ListSegmentIndexBuilds(), 1)
+	_, ok = s.GetSegmentIndexByBuildID(2)
+	assert.False(t, ok)
+	_, ok = s.GetSegmentIndexByBuildID(3)
+	assert.False(t, ok)
+	assert.Empty(t, s.GetSegmentIndexes(20))
+	assert.Empty(t, s.GetSegmentIndexes(30))
+	current, ok := s.GetSegmentIndex(10, 100)
+	require.True(t, ok)
+	assert.Equal(t, int64(1), current.BuildID)
+}
