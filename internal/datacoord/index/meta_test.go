@@ -20,6 +20,7 @@ package index
 import (
 	"context"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -1196,20 +1197,26 @@ func TestIndexMeta_QueryViewIndexSnapshotDoesNotObservePartialSegmentIndexBatch(
 		IndexVersion: 1,
 	})
 
+	// Pause the snapshot while it copies segment 1's record, inside its
+	// fieldIndexLock section. alterSegmentIndexes clones only version-2
+	// inputs, so the hook never pauses it.
 	firstSegmentRead := make(chan struct{})
 	continueSnapshot := make(chan struct{})
-	var getSegmentIndexesOrigin func(*IndexMeta, UniqueID, UniqueID) map[UniqueID]*model.SegmentIndex
-	getSegmentIndexesMock := mockey.Mock((*IndexMeta).GetSegmentIndexesUnsafe).To(
-		func(meta *IndexMeta, collectionID, segmentID UniqueID) map[UniqueID]*model.SegmentIndex {
-			indexes := getSegmentIndexesOrigin(meta, collectionID, segmentID)
-			if segmentID == segment1ID {
-				close(firstSegmentRead)
-				<-continueSnapshot
+	var pauseOnce sync.Once
+	var cloneOrigin func(*model.SegmentIndex) *model.SegmentIndex
+	cloneMock := mockey.Mock(model.CloneSegmentIndex).To(
+		func(segIdx *model.SegmentIndex) *model.SegmentIndex {
+			cloned := cloneOrigin(segIdx)
+			if segIdx.SegmentID == segment1ID && segIdx.IndexVersion == 1 {
+				pauseOnce.Do(func() {
+					close(firstSegmentRead)
+					<-continueSnapshot
+				})
 			}
-			return indexes
+			return cloned
 		},
-	).Origin(&getSegmentIndexesOrigin).Build()
-	defer getSegmentIndexesMock.UnPatch()
+	).Origin(&cloneOrigin).Build()
+	defer cloneMock.UnPatch()
 
 	snapshotDone := make(chan map[int64]map[UniqueID]*model.SegmentIndex, 1)
 	go func() {

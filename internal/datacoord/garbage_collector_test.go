@@ -222,6 +222,8 @@ func TestGarbageCollector_recycleUnusedSegIndexes_SnapshotReference(t *testing.T
 		BuildID:      402,
 		NodeID:       502,
 	}
+	// GC re-reads each candidate by build ID before deciding.
+	im.PutSegmentIndexesForTest(segIdx1, segIdx2)
 
 	// Setup mocks
 	// New O(1) API: IsBuildIDGCBlocked encodes both "loaded state" and "is referenced".

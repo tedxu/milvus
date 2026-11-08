@@ -1320,7 +1320,7 @@ func TestExternalCollectionRefreshChecker_IndexWait(t *testing.T) {
 					return out
 				}).Build()
 
-			checker := NewRefreshChecker(ctx, mt, &index.IndexMeta{}, refreshMeta, make(chan struct{}), nil,
+			checker := NewRefreshChecker(ctx, mt, index.NewSegmentIndexMeta(nil), refreshMeta, make(chan struct{}), nil,
 				func(context.Context, *datapb.ExternalCollectionRefreshJob) error { return nil },
 				nil, nil, nil)
 
@@ -1347,7 +1347,7 @@ func TestExternalCollectionRefreshChecker_IndexWait(t *testing.T) {
 			require.NoError(t, refreshMeta.UpdateJobProgress(1, 100))
 			job := refreshMeta.GetJob(1)
 
-			checker := NewRefreshChecker(ctx, mt, &index.IndexMeta{}, refreshMeta, make(chan struct{}), nil,
+			checker := NewRefreshChecker(ctx, mt, index.NewSegmentIndexMeta(nil), refreshMeta, make(chan struct{}), nil,
 				func(context.Context, *datapb.ExternalCollectionRefreshJob) error { return nil },
 				nil, nil, nil)
 			checker.AggregateJobState(job)
@@ -1368,7 +1368,7 @@ func TestExternalCollectionRefreshChecker_IndexWait(t *testing.T) {
 			debt := []int64{555}
 			refreshMeta, mt, job := stage(t, nil, &debt)
 			applied := 0
-			checker := NewRefreshChecker(ctx, mt, &index.IndexMeta{}, refreshMeta, make(chan struct{}), nil,
+			checker := NewRefreshChecker(ctx, mt, index.NewSegmentIndexMeta(nil), refreshMeta, make(chan struct{}), nil,
 				func(context.Context, *datapb.ExternalCollectionRefreshJob) error { applied++; return nil },
 				nil, nil, nil)
 
@@ -1392,7 +1392,7 @@ func TestExternalCollectionRefreshChecker_IndexWait(t *testing.T) {
 			debt := []int64{556}
 			refreshMeta, mt, job := stage(t, []int64{555}, &debt)
 			applied := 0
-			checker := NewRefreshChecker(ctx, mt, &index.IndexMeta{}, refreshMeta, make(chan struct{}), nil,
+			checker := NewRefreshChecker(ctx, mt, index.NewSegmentIndexMeta(nil), refreshMeta, make(chan struct{}), nil,
 				func(context.Context, *datapb.ExternalCollectionRefreshJob) error { applied++; return nil },
 				nil, nil, nil)
 
@@ -1427,7 +1427,7 @@ func TestExternalCollectionRefreshChecker_IndexWait(t *testing.T) {
 			debt := []int64{556}
 			refreshMeta, mt, job := stage(t, []int64{555}, &debt)
 			applied := 0
-			checker := NewRefreshChecker(ctx, mt, &index.IndexMeta{}, refreshMeta, make(chan struct{}), nil,
+			checker := NewRefreshChecker(ctx, mt, index.NewSegmentIndexMeta(nil), refreshMeta, make(chan struct{}), nil,
 				func(context.Context, *datapb.ExternalCollectionRefreshJob) error {
 					applied++
 					if applied > 1 {
@@ -1465,7 +1465,7 @@ func TestExternalCollectionRefreshChecker_IndexWait(t *testing.T) {
 			debt := []int64{556}
 			refreshMeta, mt, job := stage(t, nil, &debt)
 			notified := 0
-			checker := NewRefreshChecker(ctx, mt, &index.IndexMeta{}, refreshMeta, make(chan struct{}),
+			checker := NewRefreshChecker(ctx, mt, index.NewSegmentIndexMeta(nil), refreshMeta, make(chan struct{}),
 				func(context.Context, *datapb.ExternalCollectionRefreshJob) { notified++ },
 				func(context.Context, *datapb.ExternalCollectionRefreshJob) error { return nil },
 				nil, nil, nil)
@@ -1488,7 +1488,7 @@ func TestExternalCollectionRefreshChecker_IndexWait(t *testing.T) {
 			debt := []int64{556}
 			refreshMeta, mt, job := stage(t, nil, &debt)
 			job.StartTime = time.Now().Add(-1000 * time.Hour).UnixMilli()
-			checker := NewRefreshChecker(ctx, mt, &index.IndexMeta{}, refreshMeta, make(chan struct{}), nil,
+			checker := NewRefreshChecker(ctx, mt, index.NewSegmentIndexMeta(nil), refreshMeta, make(chan struct{}), nil,
 				func(context.Context, *datapb.ExternalCollectionRefreshJob) error { return nil },
 				nil, nil, nil)
 
@@ -1529,7 +1529,7 @@ func TestExternalCollectionRefreshChecker_IndexWait(t *testing.T) {
 			refreshMeta, mt, job := stage(t, nil, &debt)
 
 			var applies int32
-			checker := NewRefreshChecker(ctx, mt, &index.IndexMeta{}, refreshMeta, make(chan struct{}), nil,
+			checker := NewRefreshChecker(ctx, mt, index.NewSegmentIndexMeta(nil), refreshMeta, make(chan struct{}), nil,
 				func(context.Context, *datapb.ExternalCollectionRefreshJob) error {
 					atomic.AddInt32(&applies, 1)
 					return nil
@@ -1560,7 +1560,7 @@ func TestExternalCollectionRefreshChecker_IndexWait(t *testing.T) {
 			refreshMeta, mt, job := stage(t, nil, &debt)
 
 			var applies int32
-			checker := NewRefreshChecker(ctx, mt, &index.IndexMeta{}, refreshMeta, make(chan struct{}), nil,
+			checker := NewRefreshChecker(ctx, mt, index.NewSegmentIndexMeta(nil), refreshMeta, make(chan struct{}), nil,
 				func(context.Context, *datapb.ExternalCollectionRefreshJob) error {
 					atomic.AddInt32(&applies, 1)
 					return nil
@@ -1613,7 +1613,7 @@ func TestExternalCollectionRefreshChecker_IndexWait(t *testing.T) {
 				ID: 556, CollectionID: 100, State: commonpb.SegmentState_Flushed,
 			}})
 
-			checker := NewRefreshChecker(ctx, mt, &index.IndexMeta{}, refreshMeta, make(chan struct{}), nil,
+			checker := NewRefreshChecker(ctx, mt, index.NewSegmentIndexMeta(nil), refreshMeta, make(chan struct{}), nil,
 				func(context.Context, *datapb.ExternalCollectionRefreshJob) error { return nil },
 				nil, nil, nil)
 
@@ -1661,7 +1661,7 @@ func TestExternalCollectionRefreshChecker_IndexWait(t *testing.T) {
 				func(_ *index.IndexMeta, _ int64, _ []int64) []int64 { return debt }).Build()
 
 			var applied int
-			checker := NewRefreshChecker(ctx, mt, &index.IndexMeta{}, refreshMeta, make(chan struct{}), nil,
+			checker := NewRefreshChecker(ctx, mt, index.NewSegmentIndexMeta(nil), refreshMeta, make(chan struct{}), nil,
 				func(context.Context, *datapb.ExternalCollectionRefreshJob) error { applied++; return nil },
 				nil, nil, nil)
 
@@ -1715,7 +1715,7 @@ func TestExternalCollectionRefreshChecker_IndexWait(t *testing.T) {
 			mockey.Mock((*index.IndexMeta).GetUnindexedSegments).To(
 				func(_ *index.IndexMeta, _ int64, _ []int64) []int64 { return debt }).Build()
 
-			checker := NewRefreshChecker(ctx, mt, &index.IndexMeta{}, refreshMeta, make(chan struct{}), nil,
+			checker := NewRefreshChecker(ctx, mt, index.NewSegmentIndexMeta(nil), refreshMeta, make(chan struct{}), nil,
 				func(context.Context, *datapb.ExternalCollectionRefreshJob) error { return nil },
 				nil, nil, nil)
 
@@ -1751,7 +1751,7 @@ func TestExternalCollectionRefreshChecker_IndexWait(t *testing.T) {
 					return nil
 				}).Build()
 
-			checker := NewRefreshChecker(ctx, mt, &index.IndexMeta{}, refreshMeta, make(chan struct{}), nil,
+			checker := NewRefreshChecker(ctx, mt, index.NewSegmentIndexMeta(nil), refreshMeta, make(chan struct{}), nil,
 				func(context.Context, *datapb.ExternalCollectionRefreshJob) error { return nil },
 				nil, nil, nil)
 
@@ -1788,7 +1788,7 @@ func TestExternalCollectionRefreshChecker_IndexWait(t *testing.T) {
 				indexpb.JobState_JobStateInProgress, int64(40), nil).Build()
 			require.NoError(t, refreshMeta.UpdateJobProgress(1, 40))
 
-			checker := NewRefreshChecker(ctx, mt, &index.IndexMeta{}, refreshMeta, make(chan struct{}), nil,
+			checker := NewRefreshChecker(ctx, mt, index.NewSegmentIndexMeta(nil), refreshMeta, make(chan struct{}), nil,
 				func(context.Context, *datapb.ExternalCollectionRefreshJob) error { return nil },
 				nil, nil, nil)
 
@@ -1818,7 +1818,7 @@ func TestExternalCollectionRefreshChecker_IndexWait(t *testing.T) {
 			var debt []int64 // everything already indexed
 			refreshMeta, mt, job := stage(t, []int64{555, 556}, &debt)
 			applied := 0
-			checker := NewRefreshChecker(ctx, mt, &index.IndexMeta{}, refreshMeta, make(chan struct{}), nil,
+			checker := NewRefreshChecker(ctx, mt, index.NewSegmentIndexMeta(nil), refreshMeta, make(chan struct{}), nil,
 				func(context.Context, *datapb.ExternalCollectionRefreshJob) error { applied++; return nil },
 				nil, nil, nil)
 
@@ -1845,7 +1845,7 @@ func TestExternalCollectionRefreshChecker_IndexWait(t *testing.T) {
 
 			var debt []int64
 			refreshMeta, mt, job := stage(t, nil, &debt) // no segments at all
-			checker := NewRefreshChecker(ctx, mt, &index.IndexMeta{}, refreshMeta, make(chan struct{}), nil,
+			checker := NewRefreshChecker(ctx, mt, index.NewSegmentIndexMeta(nil), refreshMeta, make(chan struct{}), nil,
 				func(context.Context, *datapb.ExternalCollectionRefreshJob) error { return nil },
 				nil, nil, nil)
 
@@ -1868,7 +1868,7 @@ func TestExternalCollectionRefreshChecker_IndexWait(t *testing.T) {
 			debt := []int64{556}
 			refreshMeta, mt, job := stage(t, nil, &debt)
 			var failed []int64
-			checker := NewRefreshChecker(ctx, mt, &index.IndexMeta{}, refreshMeta, make(chan struct{}), nil,
+			checker := NewRefreshChecker(ctx, mt, index.NewSegmentIndexMeta(nil), refreshMeta, make(chan struct{}), nil,
 				func(context.Context, *datapb.ExternalCollectionRefreshJob) error {
 					return errors.New("result store unavailable")
 				},
@@ -1904,7 +1904,7 @@ func TestExternalCollectionRefreshChecker_IndexWait(t *testing.T) {
 					return errors.New("etcd unavailable")
 				}).Build()
 
-			checker := NewRefreshChecker(ctx, mt, &index.IndexMeta{}, refreshMeta, make(chan struct{}), nil,
+			checker := NewRefreshChecker(ctx, mt, index.NewSegmentIndexMeta(nil), refreshMeta, make(chan struct{}), nil,
 				func(context.Context, *datapb.ExternalCollectionRefreshJob) error { return nil },
 				nil, nil, nil)
 
@@ -1931,7 +1931,7 @@ func TestExternalCollectionRefreshChecker_IndexWait(t *testing.T) {
 
 			debt := []int64{556}
 			refreshMeta, mt, job := stage(t, nil, &debt)
-			checker := NewRefreshChecker(ctx, mt, &index.IndexMeta{}, refreshMeta, make(chan struct{}), nil,
+			checker := NewRefreshChecker(ctx, mt, index.NewSegmentIndexMeta(nil), refreshMeta, make(chan struct{}), nil,
 				func(context.Context, *datapb.ExternalCollectionRefreshJob) error { return nil },
 				nil, nil, nil)
 
@@ -1968,7 +1968,7 @@ func TestExternalCollectionRefreshChecker_IndexWait(t *testing.T) {
 
 			debt := []int64{556}
 			refreshMeta, mt, job := stage(t, []int64{555}, &debt)
-			checker := NewRefreshChecker(ctx, mt, &index.IndexMeta{}, refreshMeta, make(chan struct{}), nil,
+			checker := NewRefreshChecker(ctx, mt, index.NewSegmentIndexMeta(nil), refreshMeta, make(chan struct{}), nil,
 				func(context.Context, *datapb.ExternalCollectionRefreshJob) error { return nil },
 				nil, nil, nil)
 
@@ -1999,7 +1999,7 @@ func TestExternalCollectionRefreshChecker_IndexWait(t *testing.T) {
 
 			debt := []int64{556}
 			refreshMeta, mt, job := stage(t, nil, &debt)
-			checker := NewRefreshChecker(ctx, mt, &index.IndexMeta{}, refreshMeta, make(chan struct{}), nil,
+			checker := NewRefreshChecker(ctx, mt, index.NewSegmentIndexMeta(nil), refreshMeta, make(chan struct{}), nil,
 				func(context.Context, *datapb.ExternalCollectionRefreshJob) error { return nil },
 				nil, nil, nil)
 
@@ -2116,7 +2116,7 @@ func TestExternalCollectionRefreshChecker_IndexWait_TimeoutInEntryPassPublishes(
 
 		cm := &recordingChunkManager{}
 		var published [][2]string
-		mgr := NewExternalCollectionRefreshManager(ctx, mt, &index.IndexMeta{}, newStubScheduler(), &stubAllocator{},
+		mgr := NewExternalCollectionRefreshManager(ctx, mt, index.NewSegmentIndexMeta(nil), newStubScheduler(), &stubAllocator{},
 			refreshMeta, nil, testCollectionGetter(mt),
 			func(_ context.Context, _ int64, source, spec string) error {
 				published = append(published, [2]string{source, spec})
@@ -2125,7 +2125,7 @@ func TestExternalCollectionRefreshChecker_IndexWait_TimeoutInEntryPassPublishes(
 
 		// The manager's own callbacks, wired to a stub apply - what is under
 		// test is the callback ordering, not the segment update.
-		checker := NewRefreshChecker(ctx, mt, &index.IndexMeta{}, refreshMeta, make(chan struct{}),
+		checker := NewRefreshChecker(ctx, mt, index.NewSegmentIndexMeta(nil), refreshMeta, make(chan struct{}),
 			mgr.handleJobFinished,
 			func(context.Context, *datapb.ExternalCollectionRefreshJob) error { return nil },
 			mgr.handleJobFailed, mgr.forgetJob, nil)
