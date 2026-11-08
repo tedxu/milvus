@@ -69,9 +69,10 @@ type IndexStore interface {
 	// the current record of (segment, index) only if it is the same build.
 	// It reports whether the build was present.
 	RemoveSegmentIndex(record *model.SegmentIndex) (removed bool)
-	// LoadIndexes installs reloaded metadata. Every record enters the build
-	// lookup; the highest build ID of each (segment, index) becomes current,
-	// whatever the input order.
+	// LoadIndexes replaces the section with reloaded metadata. Every record
+	// enters the build lookup; the highest build ID of each (segment, index)
+	// becomes current, whatever the input order. DataCoord retries recovery
+	// against the same store, so nothing a failed attempt loaded survives.
 	LoadIndexes(indexes []*model.Index, records []*model.SegmentIndex)
 }
 
@@ -232,6 +233,9 @@ func (s *metaStore) RemoveSegmentIndex(record *model.SegmentIndex) bool {
 func (s *metaStore) LoadIndexes(indexes []*model.Index, records []*model.SegmentIndex) {
 	s.index.mu.Lock()
 	defer s.index.mu.Unlock()
+	s.index.defs = make(map[int64]map[int64]*model.Index)
+	s.index.current = make(map[int64]map[int64]*model.SegmentIndex)
+	s.index.builds = make(map[int64]*model.SegmentIndex)
 	for _, index := range indexes {
 		collection, ok := s.index.defs[index.CollectionID]
 		if !ok {
