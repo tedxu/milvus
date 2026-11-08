@@ -85,11 +85,7 @@ func (c *IndexChecker) Check(ctx context.Context) []task.Task {
 	var tasks []task.Task
 
 	for _, collectionID := range collectionIDs {
-		indexInfos, err := c.broker.ListIndexes(ctx, collectionID)
-		if err != nil {
-			mlog.Warn(ctx, "failed to list indexes", mlog.Int64("collection", collectionID), mlog.Err(err))
-			continue
-		}
+		indexInfos := c.meta.ListIndexInfos(collectionID)
 
 		collection := c.meta.GetCollection(ctx, collectionID)
 		if collection == nil {

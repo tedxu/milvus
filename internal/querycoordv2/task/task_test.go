@@ -37,6 +37,7 @@ import (
 	"github.com/milvus-io/milvus/internal/metacache/metacachetest"
 	"github.com/milvus-io/milvus/internal/metastore"
 	"github.com/milvus-io/milvus/internal/metastore/kv/querycoord"
+	"github.com/milvus-io/milvus/internal/metastore/model"
 	"github.com/milvus-io/milvus/internal/querycoordv2/meta"
 	. "github.com/milvus-io/milvus/internal/querycoordv2/params"
 	"github.com/milvus-io/milvus/internal/querycoordv2/session"
@@ -45,7 +46,6 @@ import (
 	"github.com/milvus-io/milvus/pkg/v3/common"
 	"github.com/milvus-io/milvus/pkg/v3/kv"
 	"github.com/milvus-io/milvus/pkg/v3/proto/datapb"
-	"github.com/milvus-io/milvus/pkg/v3/proto/indexpb"
 	"github.com/milvus-io/milvus/pkg/v3/proto/querypb"
 	"github.com/milvus-io/milvus/pkg/v3/util"
 	"github.com/milvus-io/milvus/pkg/v3/util/merr"
@@ -237,18 +237,16 @@ func (suite *TaskSuite) TestSubscribeChannelTask() {
 				},
 			}, nil)
 	}
-	suite.broker.EXPECT().ListIndexes(mock.Anything, suite.collection).Return([]*indexpb.IndexInfo{
-		{
-			CollectionID: suite.collection,
-			FieldID:      100,
-			IndexParams: []*commonpb.KeyValuePair{
-				{
-					Key:   common.MetricTypeKey,
-					Value: "L2",
-				},
+	suite.viewStore.PutIndex(&model.Index{
+		CollectionID: suite.collection,
+		FieldID:      100,
+		IndexParams: []*commonpb.KeyValuePair{
+			{
+				Key:   common.MetricTypeKey,
+				Value: "L2",
 			},
 		},
-	}, nil)
+	})
 	suite.cluster.EXPECT().WatchDmChannels(mock.Anything, targetNode, mock.Anything).Return(merr.Success(), nil)
 
 	// Test subscribe channel task
@@ -435,11 +433,7 @@ func (suite *TaskSuite) TestLoadSegmentTask() {
 			{FieldID: 100, Name: "vec", DataType: schemapb.DataType_FloatVector},
 		},
 	})
-	suite.broker.EXPECT().ListIndexes(mock.Anything, suite.collection).Return([]*indexpb.IndexInfo{
-		{
-			CollectionID: suite.collection,
-		},
-	}, nil)
+	suite.viewStore.PutIndex(&model.Index{CollectionID: suite.collection})
 	for _, segment := range suite.loadSegments {
 		suite.broker.EXPECT().GetSegmentInfo(mock.Anything, segment).Return([]*datapb.SegmentInfo{
 			{
@@ -546,11 +540,7 @@ func (suite *TaskSuite) TestLoadSegmentTaskNotIndex() {
 			{FieldID: 100, Name: "vec", DataType: schemapb.DataType_FloatVector},
 		},
 	})
-	suite.broker.EXPECT().ListIndexes(mock.Anything, suite.collection).Return([]*indexpb.IndexInfo{
-		{
-			CollectionID: suite.collection,
-		},
-	}, nil)
+	suite.viewStore.PutIndex(&model.Index{CollectionID: suite.collection})
 	for _, segment := range suite.loadSegments {
 		suite.broker.EXPECT().GetSegmentInfo(mock.Anything, segment).Return([]*datapb.SegmentInfo{
 			{
@@ -836,7 +826,7 @@ func (suite *TaskSuite) TestSegmentTaskWaitsDistAfterLoadRPC() {
 			{FieldID: 100, Name: "vec", DataType: schemapb.DataType_FloatVector},
 		},
 	})
-	suite.broker.EXPECT().ListIndexes(mock.Anything, suite.collection).Return([]*indexpb.IndexInfo{{CollectionID: suite.collection}}, nil)
+	suite.viewStore.PutIndex(&model.Index{CollectionID: suite.collection})
 	suite.broker.EXPECT().GetSegmentInfo(mock.Anything, segmentID).Return([]*datapb.SegmentInfo{
 		{
 			ID:            segmentID,
@@ -1013,11 +1003,7 @@ func (suite *TaskSuite) TestMoveSegmentTask() {
 			{FieldID: 100, Name: "vec", DataType: schemapb.DataType_FloatVector},
 		},
 	})
-	suite.broker.EXPECT().ListIndexes(mock.Anything, suite.collection).Return([]*indexpb.IndexInfo{
-		{
-			CollectionID: suite.collection,
-		},
-	}, nil)
+	suite.viewStore.PutIndex(&model.Index{CollectionID: suite.collection})
 	for _, segment := range suite.moveSegments {
 		suite.broker.EXPECT().GetSegmentInfo(mock.Anything, segment).Return([]*datapb.SegmentInfo{
 			{
@@ -1143,11 +1129,7 @@ func (suite *TaskSuite) TestTaskCanceled() {
 			{FieldID: 100, Name: "vec", DataType: schemapb.DataType_FloatVector},
 		},
 	})
-	suite.broker.EXPECT().ListIndexes(mock.Anything, suite.collection).Return([]*indexpb.IndexInfo{
-		{
-			CollectionID: suite.collection,
-		},
-	}, nil)
+	suite.viewStore.PutIndex(&model.Index{CollectionID: suite.collection})
 	for _, segment := range suite.loadSegments {
 		suite.broker.EXPECT().GetSegmentInfo(mock.Anything, segment).Return([]*datapb.SegmentInfo{
 			{
@@ -1293,11 +1275,7 @@ func (suite *TaskSuite) TestLeaderTaskSet() {
 			{FieldID: 100, Name: "vec", DataType: schemapb.DataType_FloatVector},
 		},
 	})
-	suite.broker.EXPECT().ListIndexes(mock.Anything, suite.collection).Return([]*indexpb.IndexInfo{
-		{
-			CollectionID: suite.collection,
-		},
-	}, nil)
+	suite.viewStore.PutIndex(&model.Index{CollectionID: suite.collection})
 	for _, segment := range suite.loadSegments {
 		suite.broker.EXPECT().GetSegmentInfo(mock.Anything, segment).Return([]*datapb.SegmentInfo{
 			{
@@ -2503,11 +2481,7 @@ func (suite *TaskSuite) TestExecutor_MoveSegmentTask() {
 			{FieldID: 100, Name: "vec", DataType: schemapb.DataType_FloatVector},
 		},
 	})
-	suite.broker.EXPECT().ListIndexes(mock.Anything, suite.collection).Return([]*indexpb.IndexInfo{
-		{
-			CollectionID: suite.collection,
-		},
-	}, nil)
+	suite.viewStore.PutIndex(&model.Index{CollectionID: suite.collection})
 	suite.broker.EXPECT().GetSegmentInfo(mock.Anything, segmentID).Return([]*datapb.SegmentInfo{
 		{
 			ID:            segmentID,

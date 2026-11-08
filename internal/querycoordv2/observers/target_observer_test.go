@@ -157,7 +157,6 @@ func (suite *TargetObserverSuite) SetupTest() {
 
 	expectRecoveryInfo(suite.broker, suite.metaStore, mock.Anything, suite.nextTargetChannels, suite.nextTargetSegments, nil)
 	suite.metaStore.PutCollection(&metacache.CollectionInfo{ID: suite.collectionID})
-	suite.broker.EXPECT().ListIndexes(mock.Anything, mock.Anything).Return(nil, nil).Maybe()
 	suite.cluster.EXPECT().SyncDistribution(mock.Anything, mock.Anything, mock.Anything).Return(merr.Success(), nil).Maybe()
 	suite.observer.Start()
 }
@@ -268,7 +267,6 @@ func (suite *TargetObserverSuite) TestIncrementalUpdate_WithNewSegment() {
 	// These mocks will be used by the background goroutine when it polls for updates
 	expectRecoveryInfo(suite.broker, suite.metaStore, mock.Anything, suite.nextTargetChannels, suite.nextTargetSegments, nil)
 	suite.metaStore.PutCollection(&metacache.CollectionInfo{ID: suite.collectionID})
-	suite.broker.EXPECT().ListIndexes(mock.Anything, mock.Anything).Return(nil, nil).Maybe()
 
 	// Manually trigger update so the observer discovers the new segment immediately
 	// instead of waiting for the background ticker (default interval 10s, which would
@@ -549,7 +547,6 @@ func TestShouldUpdateCurrentTarget_ReplicaReadiness(t *testing.T) {
 	targetMgr.EXPECT().GetCollectionTargetVersion(mock.Anything, collectionID, meta.NextTarget).Return(newVersion).Maybe()
 	targetMgr.EXPECT().GetSealedSegmentsByCollection(mock.Anything, collectionID, meta.NextTarget).Return(map[int64]*datapb.SegmentInfo{}).Maybe()
 	viewStore.PutCollection(&metacache.CollectionInfo{ID: collectionID})
-	broker.EXPECT().ListIndexes(mock.Anything, mock.Anything).Return(nil, nil).Maybe()
 	cluster.EXPECT().SyncDistribution(mock.Anything, mock.Anything, mock.Anything).Return(merr.Success(), nil).Maybe()
 
 	// Test case: replica1 (node1) has both channels ready
@@ -683,7 +680,6 @@ func TestShouldUpdateCurrentTarget_OnlyReadyDelegatorsSynced(t *testing.T) {
 	// Return segments for CheckSegmentDataReady
 	targetMgr.EXPECT().GetSealedSegmentsByCollection(mock.Anything, collectionID, meta.NextTarget).Return(targetSegments).Maybe()
 
-	broker.EXPECT().ListIndexes(mock.Anything, mock.Anything).Return(nil, nil).Maybe()
 	viewStore.PutCollection(&metacache.CollectionInfo{
 		ID:              collectionID,
 		Schema:          schema,
@@ -844,7 +840,6 @@ func TestShouldUpdateCurrentTarget_AllChannelsSynced(t *testing.T) {
 	targetMgr.EXPECT().GetSealedSegmentsByCollection(mock.Anything, collectionID, meta.NextTarget).Return(allSegments).Maybe()
 
 	viewStore.PutCollection(&metacache.CollectionInfo{ID: collectionID})
-	broker.EXPECT().ListIndexes(mock.Anything, mock.Anything).Return(nil, nil).Maybe()
 	cluster.EXPECT().SyncDistribution(mock.Anything, mock.Anything, mock.Anything).Return(merr.Success(), nil).Maybe()
 
 	// Node 1 has BOTH channels ready
@@ -987,7 +982,6 @@ func TestShouldUpdateCurrentTarget_PartialChannelsSynced(t *testing.T) {
 	targetMgr.EXPECT().GetSealedSegmentsByCollection(mock.Anything, collectionID, meta.NextTarget).Return(allSegments).Maybe()
 
 	viewStore.PutCollection(&metacache.CollectionInfo{ID: collectionID})
-	broker.EXPECT().ListIndexes(mock.Anything, mock.Anything).Return(nil, nil).Maybe()
 	cluster.EXPECT().SyncDistribution(mock.Anything, mock.Anything, mock.Anything).Return(merr.Success(), nil).Maybe()
 
 	// Node 1 has ONLY channel-1 ready, channel-2 is NOT ready (missing segment)
@@ -1098,7 +1092,6 @@ func TestShouldUpdateCurrentTarget_NoReadyDelegators(t *testing.T) {
 	targetMgr.EXPECT().GetSealedSegmentsByCollection(mock.Anything, collectionID, meta.NextTarget).Return(targetSegments).Maybe()
 
 	viewStore.PutCollection(&metacache.CollectionInfo{ID: collectionID})
-	broker.EXPECT().ListIndexes(mock.Anything, mock.Anything).Return(nil, nil).Maybe()
 	cluster.EXPECT().SyncDistribution(mock.Anything, mock.Anything, mock.Anything).Return(merr.Success(), nil).Maybe()
 
 	// Node 1 has channel-1 but NOT ready (missing segment)

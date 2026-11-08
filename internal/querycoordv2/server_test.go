@@ -574,7 +574,6 @@ func (suite *ServerSuite) hackServer() {
 		suite.server.proxyClientManager,
 	)
 
-	suite.broker.EXPECT().ListIndexes(mock.Anything, mock.Anything).Return(nil, nil).Maybe()
 	for _, collection := range suite.collections {
 		suite.broker.EXPECT().DescribeCollection(mock.Anything, collection).Return(&milvuspb.DescribeCollectionResponse{
 			DbName:         util.DefaultDBName,

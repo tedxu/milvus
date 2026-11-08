@@ -24,6 +24,7 @@ import (
 
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
@@ -33,6 +34,7 @@ import (
 	"github.com/milvus-io/milvus/internal/metacache/metacachetest"
 	"github.com/milvus-io/milvus/internal/metastore"
 	"github.com/milvus-io/milvus/internal/metastore/kv/querycoord"
+	"github.com/milvus-io/milvus/internal/metastore/model"
 	. "github.com/milvus-io/milvus/internal/querycoordv2/params"
 	"github.com/milvus-io/milvus/pkg/v3/common"
 	"github.com/milvus-io/milvus/pkg/v3/kv"
@@ -738,4 +740,19 @@ func TestCollectionManager_GetCollectionLoadInfo(t *testing.T) {
 			assert.Equal(t, tc.wantReplicas, replicas)
 		})
 	}
+}
+
+func TestCollectionManager_ListIndexInfosFromSharedStore(t *testing.T) {
+	store := metacache.NewMetaStore(nil)
+	store.PutIndex(&model.Index{CollectionID: 1, FieldID: 101, IndexID: 2, IndexName: "b"})
+	store.PutIndex(&model.Index{CollectionID: 1, FieldID: 102, IndexID: 1, IndexName: "a"})
+	store.PutIndex(&model.Index{CollectionID: 1, FieldID: 103, IndexID: 3, IsDeleted: true})
+	store.PutIndex(&model.Index{CollectionID: 2, FieldID: 101, IndexID: 9})
+	mgr := NewCollectionManager(nil, store)
+
+	infos := mgr.ListIndexInfos(1)
+	require.Len(t, infos, 2, "deleted definitions and other collections are excluded")
+	assert.Equal(t, int64(1), infos[0].GetIndexID())
+	assert.Equal(t, int64(2), infos[1].GetIndexID())
+	assert.Empty(t, mgr.ListIndexInfos(3))
 }

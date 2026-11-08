@@ -7,7 +7,6 @@ import (
 	"github.com/bytedance/mockey"
 	"github.com/stretchr/testify/require"
 
-	"github.com/milvus-io/milvus/internal/datacoord"
 	"github.com/milvus-io/milvus/internal/querycoordv2"
 	"github.com/milvus-io/milvus/pkg/v3/proto/indexpb"
 	"github.com/milvus-io/milvus/pkg/v3/proto/querypb"
@@ -31,18 +30,4 @@ func TestMixCoordQueryViewLoadInfoPreservesResolvedScope(t *testing.T) {
 	resp, err := s.GetQueryViewLoadInfo(t.Context(), &querypb.GetQueryViewLoadInfoRequest{CollectionID: 1, Version: 9})
 	require.NoError(t, err)
 	require.Same(t, resolved, resp, "MixCoord must not replace the store's scoped indexes")
-}
-
-func TestMixCoordQueryViewCollectionIndexInfos(t *testing.T) {
-	dc := &datacoord.Server{}
-	indexes := []*indexpb.IndexInfo{{FieldID: 100, IndexID: 200}}
-	patch := mockey.Mock((*datacoord.Server).GetQueryViewCollectionIndexInfos).To(func(receiver *datacoord.Server, id int64, ids ...int64) []*indexpb.IndexInfo {
-		require.Same(t, dc, receiver)
-		require.Equal(t, []int64{200}, ids)
-		require.EqualValues(t, 1, id)
-		return indexes
-	}).Build()
-	defer patch.UnPatch()
-	s := &mixCoordImpl{datacoordServer: dc}
-	require.Equal(t, indexes, s.QueryViewCollectionIndexInfos(1, 200))
 }

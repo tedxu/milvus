@@ -424,11 +424,7 @@ func (ex *Executor) subscribeChannel(task *ChannelTask, step int) error {
 		mlog.Warn(context.TODO(), "failed to get partitions of collection", mlog.Err(err))
 		return err
 	}
-	indexInfo, err := ex.broker.ListIndexes(ctx, task.CollectionID())
-	if err != nil {
-		mlog.Warn(context.TODO(), "fail to get index meta of collection", mlog.Err(err))
-		return err
-	}
+	indexInfo := ex.meta.ListIndexInfos(task.CollectionID())
 	dbInfo, err := ex.meta.GetDatabaseInfo(collectionInfo.DatabaseName)
 	if err != nil {
 		mlog.Warn(context.TODO(), "failed to get database info", mlog.Err(err))
@@ -753,11 +749,7 @@ func (ex *Executor) getLoadInfo(ctx context.Context, collectionID, segmentID int
 	}
 
 	// Get collection index info
-	indexInfos, err := ex.broker.ListIndexes(ctx, collectionID)
-	if err != nil {
-		mlog.Warn(context.TODO(), "fail to get index meta of collection", mlog.Err(err))
-		return nil, nil, err
-	}
+	indexInfos := ex.meta.ListIndexInfos(collectionID)
 	// update the field index params
 	for _, segmentIndex := range indexes[segment.GetID()] {
 		index, found := lo.Find(indexInfos, func(indexInfo *indexpb.IndexInfo) bool {

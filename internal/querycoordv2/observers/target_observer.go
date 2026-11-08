@@ -557,11 +557,7 @@ func (ob *TargetObserver) syncNextTargetToDelegator(ctx context.Context, collect
 		return false
 	}
 
-	indexInfo, err := ob.broker.ListIndexes(ctx, collectionID)
-	if err != nil {
-		mlog.Warn(ctx, "fail to get index info of collection", mlog.Err(err))
-		return false
-	}
+	indexInfo := ob.meta.ListIndexInfos(collectionID)
 
 	for _, d := range collReadyDelegatorList {
 		updateVersionAction := ob.genSyncAction(ctx, d.View, newVersion)

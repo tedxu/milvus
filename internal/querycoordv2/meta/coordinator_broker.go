@@ -42,7 +42,6 @@ type Broker interface {
 	DescribeCollection(ctx context.Context, collectionID UniqueID) (*milvuspb.DescribeCollectionResponse, error)
 	GetCollectionProperties(ctx context.Context, collectionID UniqueID) ([]*commonpb.KeyValuePair, error)
 	GetRecoveryInfo(ctx context.Context, collectionID UniqueID, partitionID UniqueID) ([]*datapb.VchannelInfo, []*datapb.SegmentBinlogs, error)
-	ListIndexes(ctx context.Context, collectionID UniqueID) ([]*indexpb.IndexInfo, error)
 	GetSegmentInfo(ctx context.Context, segmentID ...UniqueID) ([]*datapb.SegmentInfo, error)
 	GetIndexInfo(ctx context.Context, collectionID UniqueID, segmentIDs ...UniqueID) (map[int64][]*querypb.FieldIndexInfo, error)
 	GetRecoveryInfoV2(ctx context.Context, collectionID UniqueID, partitionIDs ...UniqueID) ([]*datapb.VchannelInfo, []*datapb.SegmentInfo, error)
@@ -247,52 +246,4 @@ func (broker *CoordinatorBroker) GetIndexInfo(ctx context.Context, collectionID 
 	}
 
 	return indexes, nil
-}
-
-func (broker *CoordinatorBroker) describeIndex(ctx context.Context, collectionID UniqueID) ([]*indexpb.IndexInfo, error) {
-	ctx, cancel := context.WithTimeout(ctx, paramtable.Get().QueryCoordCfg.BrokerTimeout.GetAsDuration(time.Millisecond))
-	defer cancel()
-
-	// during rolling upgrade, query coord may connect to datacoord with version 2.2, which will return merr.ErrServiceUnimplemented
-	// we add retry here to retry the request until context done, and if new data coord start up, it will success
-	var resp *indexpb.DescribeIndexResponse
-	var err error
-	retry.Do(ctx, func() error {
-		resp, err = broker.mixCoord.DescribeIndex(ctx, &indexpb.DescribeIndexRequest{
-			CollectionID: collectionID,
-		})
-		if errors.Is(err, merr.ErrServiceUnimplemented) {
-			return err
-		}
-		return nil
-	})
-
-	if err := merr.CheckRPCCall(resp, err); err != nil {
-		mlog.Error(context.TODO(), "failed to fetch index meta",
-			mlog.Int64("collection", collectionID),
-			mlog.Err(err))
-		return nil, err
-	}
-	return resp.GetIndexInfos(), nil
-}
-
-func (broker *CoordinatorBroker) ListIndexes(ctx context.Context, collectionID UniqueID) ([]*indexpb.IndexInfo, error) {
-	ctx, cancel := context.WithTimeout(ctx, paramtable.Get().QueryCoordCfg.BrokerTimeout.GetAsDuration(time.Millisecond))
-	defer cancel()
-
-	resp, err := broker.mixCoord.ListIndexes(ctx, &indexpb.ListIndexesRequest{
-		CollectionID: collectionID,
-	})
-
-	err = merr.CheckRPCCall(resp, err)
-	if err != nil {
-		if errors.Is(err, merr.ErrServiceUnimplemented) {
-			mlog.Warn(context.TODO(), "datacoord does not implement ListIndex API fallback to DescribeIndex")
-			return broker.describeIndex(ctx, collectionID)
-		}
-		mlog.Warn(context.TODO(), "failed to fetch index meta", mlog.Err(err))
-		return nil, err
-	}
-
-	return resp.GetIndexInfos(), nil
 }

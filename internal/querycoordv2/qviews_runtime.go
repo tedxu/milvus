@@ -24,6 +24,7 @@ import (
 	clientv3 "go.etcd.io/etcd/client/v3"
 
 	"github.com/milvus-io/milvus-proto/go-api/v3/schemapb"
+	"github.com/milvus-io/milvus/internal/metacache"
 	"github.com/milvus-io/milvus/internal/metastore/kv/queryview"
 	"github.com/milvus-io/milvus/internal/querycoordv2/meta"
 	qnmanager "github.com/milvus-io/milvus/internal/querynodev2/client/manager"
@@ -252,6 +253,7 @@ func newDefaultQViewsRuntimeDependencies(
 	etcdCli *clientv3.Client,
 	resourceGroupManager nodeview.ResourceGroupStatePublisher,
 	mixCoord types.MixCoord,
+	metaView metacache.MetaView,
 ) qviewsRuntimeDependencies {
 	queryNodeManager := qnmanager.NewManagerClient(etcdCli)
 	streamingCoordClient := streamingcoordclient.NewClient(etcdCli)
@@ -277,13 +279,11 @@ func newDefaultQViewsRuntimeDependencies(
 				}
 				return uint64(response.GetID()), nil
 			},
+			// With no IDs, the current live definitions for publication; with IDs,
+			// exactly those, including logically deleted ones an older live View
+			// still references.
 			Indexes: func(id int64, indexIDs ...int64) []*indexpb.IndexInfo {
-				if source, ok := mixCoord.(interface {
-					QueryViewCollectionIndexInfos(int64, ...int64) []*indexpb.IndexInfo
-				}); ok {
-					return source.QueryViewCollectionIndexInfos(id, indexIDs...)
-				}
-				return nil
+				return metacache.PackIndexInfos(metaView.GetIndexes(id), indexIDs)
 			},
 		},
 		dataViewReconciler: reconciler,

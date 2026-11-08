@@ -34,6 +34,7 @@ import (
 	"github.com/milvus-io/milvus/pkg/v3/eventlog"
 	"github.com/milvus-io/milvus/pkg/v3/metrics"
 	"github.com/milvus-io/milvus/pkg/v3/mlog"
+	"github.com/milvus-io/milvus/pkg/v3/proto/indexpb"
 	"github.com/milvus-io/milvus/pkg/v3/proto/querypb"
 	"github.com/milvus-io/milvus/pkg/v3/util/merr"
 	"github.com/milvus-io/milvus/pkg/v3/util/paramtable"
@@ -297,6 +298,14 @@ func (m *CollectionManager) GetCollectionInfo(collectionID typeutil.UniqueID) (*
 		return nil, merr.WrapErrCollectionNotFound(collectionID)
 	}
 	return info, nil
+}
+
+// ListIndexInfos returns the collection's live index definitions, sorted by
+// index ID, from the shared metacache store. DataCoord publishes every index
+// DDL there once its catalog write succeeded. The param entries are shared and
+// must not be modified; appending to a param slice is safe.
+func (m *CollectionManager) ListIndexInfos(collectionID typeutil.UniqueID) []*indexpb.IndexInfo {
+	return metacache.PackIndexInfos(m.metaView.GetIndexes(collectionID), nil)
 }
 
 // GetDatabaseInfo returns RootCoord's view of database dbName, with a miss
