@@ -1197,23 +1197,20 @@ func TestIndexMeta_QueryViewIndexSnapshotDoesNotObservePartialSegmentIndexBatch(
 		IndexVersion: 1,
 	})
 
-	// Pause the snapshot while it copies segment 1's record, inside its
-	// fieldIndexLock section. alterSegmentIndexes clones only version-2
-	// inputs, so the hook never pauses it.
+	// Pause the snapshot inside its fieldIndexLock section, after it read the
+	// store. Only the snapshot calls ShallowCloneIndex here, so the hook is
+	// never entered concurrently (mockey's bookkeeping is not goroutine-safe).
 	firstSegmentRead := make(chan struct{})
 	continueSnapshot := make(chan struct{})
 	var pauseOnce sync.Once
-	var cloneOrigin func(*model.SegmentIndex) *model.SegmentIndex
-	cloneMock := mockey.Mock(model.CloneSegmentIndex).To(
-		func(segIdx *model.SegmentIndex) *model.SegmentIndex {
-			cloned := cloneOrigin(segIdx)
-			if segIdx.SegmentID == segment1ID && segIdx.IndexVersion == 1 {
-				pauseOnce.Do(func() {
-					close(firstSegmentRead)
-					<-continueSnapshot
-				})
-			}
-			return cloned
+	var cloneOrigin func(*model.Index) *model.Index
+	cloneMock := mockey.Mock(model.ShallowCloneIndex).To(
+		func(index *model.Index) *model.Index {
+			pauseOnce.Do(func() {
+				close(firstSegmentRead)
+				<-continueSnapshot
+			})
+			return cloneOrigin(index)
 		},
 	).Origin(&cloneOrigin).Build()
 	defer cloneMock.UnPatch()
