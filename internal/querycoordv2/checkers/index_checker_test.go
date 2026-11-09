@@ -148,6 +148,7 @@ func (suite *IndexCheckerSuite) TestLoadIndex() {
 	checker.dist.SegmentDistManager.Update(1, utils.CreateTestSegment(1, 1, 2, 1, 1, "test-insert-channel"))
 
 	// store
+	suite.putSegment(2, nil)
 	suite.putFinishedBuild(2, 1000, 5)
 
 	suite.metaStore.PutIndex(&model.Index{CollectionID: 1, FieldID: 101, IndexID: 1000})
@@ -293,6 +294,7 @@ func (suite *IndexCheckerSuite) TestCreateNewIndex() {
 	// store
 	suite.metaStore.PutIndex(&model.Index{CollectionID: 1, FieldID: 101, IndexID: 1000})
 	suite.metaStore.PutIndex(&model.Index{CollectionID: 1, FieldID: 102, IndexID: 1001})
+	suite.putSegment(2, nil)
 	suite.putFinishedBuild(2, 1000, 0)
 	suite.putFinishedBuild(2, 1001, 7)
 	tasks := checker.Check(context.Background())
@@ -355,6 +357,7 @@ func TestRemoveRedundantIndex(t *testing.T) {
 
 	// store
 	metaStore.PutIndex(&model.Index{CollectionID: 1, FieldID: 101, IndexID: 1000})
+	metaStore.PutSegment(&datapb.SegmentInfo{ID: 2, CollectionID: 1, PartitionID: 1, InsertChannel: "test-insert-channel"})
 
 	tasks := checker.Check(context.Background())
 	require.Len(t, tasks, 1)
