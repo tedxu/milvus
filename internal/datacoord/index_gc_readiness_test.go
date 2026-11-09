@@ -108,8 +108,7 @@ func newIndexGCReadinessServer(t *testing.T, secondIndex bool) (*Server, *model.
 	idx.IndexName = "gc_index"
 	catalog := &indexGCReadinessCatalog{indexes: []*model.Index{idx}, stored: map[int64]*model.SegmentIndex{}}
 	for _, id := range []int64{1, 2, 3} {
-		indexes, _ := s.indexMeta.SegmentIndexes.Get(id)
-		task, _ := indexes.Get(10)
+		task, _ := s.indexMeta.Store().GetSegmentIndex(id, 10)
 		task.BuildID = id*100 + 10
 		task.PartitionID = 1
 		catalog.stored[task.BuildID] = model.CloneSegmentIndex(task)
@@ -119,7 +118,7 @@ func newIndexGCReadinessServer(t *testing.T, secondIndex bool) (*Server, *model.
 		catalog.stored[120] = &model.SegmentIndex{CollectionID: 1, PartitionID: 1, SegmentID: 1, IndexID: 20, BuildID: 120, IndexState: commonpb.IndexState_Finished}
 	}
 	var err error
-	s.indexMeta, err = index.NewIndexMeta(context.Background(), catalog, []int64{1})
+	s.indexMeta, err = index.RecoverIndexMetaForTest(context.Background(), catalog, []int64{1})
 	require.NoError(t, err)
 	s.meta.IndexCatalog = s.indexMeta
 	return s, idx, catalog
@@ -198,7 +197,7 @@ func TestIndexGCReadinessMetaFailureSurvivesRestart(t *testing.T) {
 	// Reload the actual indexMeta from persisted catalog rows, including the
 	// Finished state underneath the deletion marker.
 	var err error
-	s.indexMeta, err = index.NewIndexMeta(context.Background(), catalog, []int64{1})
+	s.indexMeta, err = index.RecoverIndexMetaForTest(context.Background(), catalog, []int64{1})
 	require.NoError(t, err)
 	s.meta.IndexCatalog = s.indexMeta
 	gcx.Option.IndexMeta = s.indexMeta
@@ -207,8 +206,7 @@ func TestIndexGCReadinessMetaFailureSurvivesRestart(t *testing.T) {
 	require.Equal(t, []string{"mark:10", "files", "drop:110", "files", "drop:110"}, catalog.events, "retry uses the persisted marker without rewriting it")
 
 	// An independently finished current task still reports Finished.
-	indexes, _ := s.indexMeta.SegmentIndexes.Get(3)
-	output, _ := indexes.Get(10)
+	output, _ := s.indexMeta.Store().GetSegmentIndex(3, 10)
 	output.IndexState = commonpb.IndexState_Finished
 	assertIndexServingState(t, s, idx, commonpb.IndexState_Finished)
 }

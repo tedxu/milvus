@@ -20,6 +20,7 @@ import (
 	"context"
 
 	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
+	"github.com/milvus-io/milvus/internal/metacache"
 	"github.com/milvus-io/milvus/internal/metastore/model"
 	"github.com/milvus-io/milvus/pkg/v3/proto/indexpb"
 )
@@ -27,6 +28,9 @@ import (
 // SegmentIndexCatalog is what the manifest commit path and the segment
 // readiness predicate need from the index meta. indexMeta implements it.
 type SegmentIndexCatalog interface {
+	// RebuildFromStore derives the catalog's own state from the index
+	// metadata the store loaded. Recovery calls it once, after the load.
+	RebuildFromStore()
 	GetSegmentIndexState(collID, segmentID, indexID int64) *indexpb.SegmentIndexState
 	// GetIndexParams returns the index params of the index.
 	GetIndexParams(collID, indexID UniqueID) []*commonpb.KeyValuePair
@@ -100,7 +104,8 @@ type CompactionProtection interface {
 	IsCollectionCompactionBlocked(collectionID int64) bool
 }
 
-// DomainMetaLoader builds the per-domain metas. newMeta runs it in parallel
-// with segment loading and installs the returned catalog and protection
-// before reloading segment indexes from manifests.
-type DomainMetaLoader func(ctx context.Context, collectionIDs []int64) (SegmentIndexCatalog, CompactionProtection, error)
+// DomainMetaLoader builds the per-domain metas over store. newMeta runs it
+// in parallel with the store's own loading, so it must not read the store;
+// newMeta installs the returned catalog and protection, and rebuilds the
+// catalog from the store, before reloading segment indexes from manifests.
+type DomainMetaLoader func(ctx context.Context, store metacache.MetaStore, collectionIDs []int64) (SegmentIndexCatalog, CompactionProtection, error)

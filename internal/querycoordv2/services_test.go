@@ -255,7 +255,6 @@ func (suite *ServiceSuite) SetupTest() {
 		suite.meta,
 		suite.targetMgr,
 		suite.dist,
-		suite.broker,
 		suite.cluster,
 		suite.nodeMgr,
 	)
@@ -1790,7 +1789,6 @@ func (suite *ServiceSuite) loadLegacyMetadata() {
 func (suite *ServiceSuite) loadAll() {
 	ctx := context.Background()
 	for _, collection := range suite.collections {
-		suite.expectLoadMetaRPCs()
 		suite.expectGetRecoverInfo(collection)
 		if suite.loadTypes[collection] == querypb.LoadType_LoadCollection {
 			req := &querypb.LoadCollectionRequest{
@@ -1914,11 +1912,6 @@ func (suite *ServiceSuite) expectGetRecoverInfo(collection int64) {
 			Return(nil, nil).
 			Maybe()
 	}
-}
-
-func (suite *ServiceSuite) expectLoadMetaRPCs() {
-	suite.broker.EXPECT().ListIndexes(mock.Anything, mock.Anything).
-		Return(nil, nil).Maybe()
 }
 
 func (suite *ServiceSuite) getAllSegments(collection int64) []int64 {

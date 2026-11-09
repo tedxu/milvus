@@ -81,7 +81,6 @@ type TargetObserver struct {
 	meta      *meta.Meta
 	targetMgr meta.TargetManagerInterface
 	distMgr   *meta.DistributionManager
-	broker    meta.Broker
 	cluster   session.Cluster
 	nodeMgr   *session.NodeManager
 
@@ -107,7 +106,6 @@ func NewTargetObserver(
 	meta *meta.Meta,
 	targetMgr meta.TargetManagerInterface,
 	distMgr *meta.DistributionManager,
-	broker meta.Broker,
 	cluster session.Cluster,
 	nodeMgr *session.NodeManager,
 ) *TargetObserver {
@@ -115,7 +113,6 @@ func NewTargetObserver(
 		meta:                 meta,
 		targetMgr:            targetMgr,
 		distMgr:              distMgr,
-		broker:               broker,
 		cluster:              cluster,
 		nodeMgr:              nodeMgr,
 		nextTargetLastUpdate: typeutil.NewConcurrentMap[int64, time.Time](),
@@ -557,11 +554,7 @@ func (ob *TargetObserver) syncNextTargetToDelegator(ctx context.Context, collect
 		return false
 	}
 
-	indexInfo, err := ob.broker.ListIndexes(ctx, collectionID)
-	if err != nil {
-		mlog.Warn(ctx, "fail to get index info of collection", mlog.Err(err))
-		return false
-	}
+	indexInfo := ob.meta.ListIndexInfos(collectionID)
 
 	for _, d := range collReadyDelegatorList {
 		updateVersionAction := ob.genSyncAction(ctx, d.View, newVersion)

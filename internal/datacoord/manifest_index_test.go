@@ -34,7 +34,6 @@ import (
 	"github.com/milvus-io/milvus/pkg/v3/common"
 	"github.com/milvus-io/milvus/pkg/v3/proto/datapb"
 	"github.com/milvus-io/milvus/pkg/v3/proto/indexpb"
-	"github.com/milvus-io/milvus/pkg/v3/util/typeutil"
 )
 
 // GetIndexInfos serves the load path from in-memory SegmentIndex metadata and
@@ -77,9 +76,6 @@ func TestServerGetIndexInfosReadsNoManifest(t *testing.T) {
 		IndexType:             "HNSW",
 		IndexStorePathVersion: indexpb.IndexStorePathVersion_INDEX_STORE_PATH_VERSION_COLLECTION_ROOTED,
 	}
-	segmentIndexes := typeutil.NewConcurrentMap[UniqueID, *model.SegmentIndex]()
-	segmentIndexes.Insert(indexID, segmentIndex)
-	segmentIndexes.Insert(indexID2, segmentIndex2)
 	ms := metacache.NewMetaStore(nil)
 	segments := meta.NewSegmentsInfo(ms)
 	segments.SetSegment(segmentID, &meta.SegmentInfo{SegmentInfo: &datapb.SegmentInfo{
@@ -89,31 +85,28 @@ func TestServerGetIndexInfosReadsNoManifest(t *testing.T) {
 		StorageVersion: storage.StorageV3,
 		ManifestPath:   `{"base_path":"segments/1/2/3","ver":2}`,
 	}})
-	im := &index.IndexMeta{
-		Indexes: map[UniqueID]map[UniqueID]*model.Index{
-			collectionID: {
-				indexID: {
-					CollectionID: collectionID,
-					FieldID:      fieldID,
-					IndexID:      indexID,
-					IndexName:    "vector_hnsw",
-					IndexParams:  []*commonpb.KeyValuePair{{Key: common.IndexTypeKey, Value: "HNSW"}, {Key: "metric_type", Value: "L2"}},
-					TypeParams:   []*commonpb.KeyValuePair{{Key: common.DimKey, Value: "8"}},
-				},
-				indexID2: {
-					CollectionID: collectionID,
-					FieldID:      fieldID2,
-					IndexID:      indexID2,
-					IndexName:    "vector_hnsw_2",
-				},
+	im := index.NewIndexMetaForTest(nil, map[UniqueID]map[UniqueID]*model.Index{
+		collectionID: {
+			indexID: {
+				CollectionID: collectionID,
+				FieldID:      fieldID,
+				IndexID:      indexID,
+				IndexName:    "vector_hnsw",
+				IndexParams:  []*commonpb.KeyValuePair{{Key: common.IndexTypeKey, Value: "HNSW"}, {Key: "metric_type", Value: "L2"}},
+				TypeParams:   []*commonpb.KeyValuePair{{Key: common.DimKey, Value: "8"}},
+			},
+			indexID2: {
+				CollectionID: collectionID,
+				FieldID:      fieldID2,
+				IndexID:      indexID2,
+				IndexName:    "vector_hnsw_2",
 			},
 		},
-		SegmentIndexes: typeutil.NewConcurrentMap[UniqueID, *typeutil.ConcurrentMap[UniqueID, *model.SegmentIndex]](),
-	}
+	})
 	server := &Server{meta: &meta.Meta{
 		Segments: segments,
 	}, domainMetas: domainMetas{indexMeta: im}}
-	server.indexMeta.SegmentIndexes.Insert(segmentID, segmentIndexes)
+	server.indexMeta.PutSegmentIndexesForTest(segmentIndex, segmentIndex2)
 	server.meta.IndexCatalog = server.indexMeta
 	server.stateCode.Store(commonpb.StateCode_Healthy)
 	req := &indexpb.GetIndexInfoRequest{CollectionID: collectionID, SegmentIDs: []int64{segmentID}}
@@ -142,7 +135,8 @@ func TestServerGetIndexInfosReadsNoManifest(t *testing.T) {
 	// entry is never published without its record being installed in memory by
 	// the same commit, so there is nothing to recover by reading the manifest.
 	t.Run("absent segment index records yield nothing and read no manifest", func(t *testing.T) {
-		server.indexMeta.SegmentIndexes.Remove(segmentID)
+		server.indexMeta.RemoveBuildForTest(buildID)
+		server.indexMeta.RemoveBuildForTest(buildID2)
 		manifestReadCount := 0
 		patch := mockey.Mock(packed.GetManifestIndexInfosAsync).To(
 			func(_ context.Context, _ *packed.ManifestIOContext, _ string, _ *indexpb.StorageConfig) ([]packed.ManifestIndexInfo, error) {
@@ -157,7 +151,7 @@ func TestServerGetIndexInfosReadsNoManifest(t *testing.T) {
 		info := resp.GetSegmentInfo()[segmentID]
 		require.False(t, info.GetEnableIndex())
 		require.Empty(t, info.GetIndexInfos())
-		server.indexMeta.SegmentIndexes.Insert(segmentID, segmentIndexes)
+		server.indexMeta.PutSegmentIndexesForTest(segmentIndex, segmentIndex2)
 	})
 
 	// A finished record with no index file keys is a fake-finished build (a

@@ -29,6 +29,7 @@ import (
 	"github.com/milvus-io/milvus-proto/go-api/v3/schemapb"
 	"github.com/milvus-io/milvus/internal/datacoord/index"
 	"github.com/milvus-io/milvus/internal/datacoord/meta"
+	"github.com/milvus-io/milvus/internal/metacache"
 	"github.com/milvus-io/milvus/internal/metastore/model"
 	"github.com/milvus-io/milvus/internal/storage"
 	"github.com/milvus-io/milvus/internal/types"
@@ -1334,18 +1335,7 @@ func (s *Server) ListIndexes(ctx context.Context, req *indexpb.ListIndexesReques
 
 	indexes := s.indexMeta.GetIndexesForCollection(req.GetCollectionID(), "")
 
-	indexInfos := lo.Map(indexes, func(idx *model.Index, _ int) *indexpb.IndexInfo {
-		return &indexpb.IndexInfo{
-			CollectionID:    idx.CollectionID,
-			FieldID:         idx.FieldID,
-			IndexName:       idx.IndexName,
-			IndexID:         idx.IndexID,
-			TypeParams:      idx.TypeParams,
-			IndexParams:     idx.IndexParams,
-			IsAutoIndex:     idx.IsAutoIndex,
-			UserIndexParams: idx.UserIndexParams,
-		}
-	})
+	indexInfos := metacache.PackIndexInfos(indexes, nil)
 	return &indexpb.ListIndexesResponse{
 		Status:     merr.Success(),
 		IndexInfos: indexInfos,

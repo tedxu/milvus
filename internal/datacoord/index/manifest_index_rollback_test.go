@@ -51,7 +51,7 @@ func TestManifestIndexRollbackRoundTrip(t *testing.T) {
 			before := m.GetSegment(ctx, meta.RestartSegID)
 			record, ok := m.IndexCatalog.(*IndexMeta).GetIndexJob(meta.RestartBuildID)
 			require.True(t, ok)
-			published, ok := m.IndexCatalog.(*IndexMeta).SegmentBuildInfo.Get(meta.RestartBuildID)
+			published, ok := m.IndexCatalog.(*IndexMeta).Store().GetSegmentIndexByBuildID(meta.RestartBuildID)
 			require.True(t, ok)
 			require.True(t, published.ManifestPublished)
 			inspector := NewMigrationRollbackInspector(ctx, m)

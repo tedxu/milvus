@@ -44,7 +44,7 @@ func TestDataViewCompactionAdmissionIndexWithoutManifestNotifies(t *testing.T) {
 		t.Run(map[bool]string{true: "no training", false: "no artifact"}[fake], func(t *testing.T) {
 			m, dm, err := NewMemoryMetaWithIndex(t)
 			require.NoError(t, err)
-			dm.IndexMeta.Indexes[1] = map[int64]*model.Index{10: {CollectionID: 1, FieldID: 2, IndexID: 10}}
+			setCollectionIndexesForTest(dm.IndexMeta, 1, map[int64]*model.Index{10: {CollectionID: 1, FieldID: 2, IndexID: 10}})
 			recorder := &indexDataViewRecorder{}
 			m.DataViewManager = recorder
 			index := &model.SegmentIndex{CollectionID: 1, PartitionID: 1, SegmentID: 3, IndexID: 10, BuildID: 100, IndexState: commonpb.IndexState_Unissued}

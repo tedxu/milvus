@@ -29,7 +29,6 @@ import (
 	"github.com/milvus-io/milvus/internal/metastore/model"
 	"github.com/milvus-io/milvus/pkg/v3/proto/datapb"
 	"github.com/milvus-io/milvus/pkg/v3/proto/indexpb"
-	"github.com/milvus-io/milvus/pkg/v3/util/typeutil"
 )
 
 func newIndexLineageSegment(id, rows int64, state commonpb.SegmentState, parents ...int64) *datapb.SegmentInfo {
@@ -54,15 +53,10 @@ func newIndexLineageCaseServer(test indexLineageReadinessCase) (*Server, *model.
 	s, index := newIndexReadinessTestServer(test.segments, test.states)
 	index.IndexName = "lineage_index"
 	if len(test.otherIndexStates) > 0 {
-		s.indexMeta.Indexes[1][20] = &model.Index{CollectionID: 1, FieldID: 20, IndexID: 20, IndexName: "other_index"}
+		s.indexMeta.PutIndexesForTest(&model.Index{CollectionID: 1, FieldID: 20, IndexID: 20, IndexName: "other_index"})
 	}
 	for segmentID, state := range test.otherIndexStates {
-		indexes, ok := s.indexMeta.SegmentIndexes.Get(segmentID)
-		if !ok {
-			indexes = typeutil.NewConcurrentMap[UniqueID, *model.SegmentIndex]()
-			s.indexMeta.SegmentIndexes.Insert(segmentID, indexes)
-		}
-		indexes.Insert(20, &model.SegmentIndex{
+		s.indexMeta.PutSegmentIndexesForTest(&model.SegmentIndex{
 			SegmentID: segmentID, CollectionID: 1, IndexID: 20,
 			IndexState: state, CurrentIndexVersion: 7,
 		})

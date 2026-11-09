@@ -106,7 +106,6 @@ func (suite *OpsServiceSuite) SetupTest() {
 		suite.meta,
 		suite.targetMgr,
 		suite.dist,
-		suite.broker,
 		suite.cluster,
 		suite.nodeMgr,
 	)

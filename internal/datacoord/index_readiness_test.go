@@ -34,7 +34,6 @@ import (
 	"github.com/milvus-io/milvus/pkg/v3/proto/datapb"
 	"github.com/milvus-io/milvus/pkg/v3/proto/indexpb"
 	"github.com/milvus-io/milvus/pkg/v3/util/paramtable"
-	"github.com/milvus-io/milvus/pkg/v3/util/typeutil"
 )
 
 func newIndexReadinessTestServer(segments []*datapb.SegmentInfo, states map[int64]commonpb.IndexState) (*Server, *model.Index) {
@@ -44,10 +43,7 @@ func newIndexReadinessTestServer(segments []*datapb.SegmentInfo, states map[int6
 		IndexParams: []*commonpb.KeyValuePair{{Key: "index_type", Value: "IVF_FLAT"}},
 	}
 	store := metacache.NewMetaStore(nil)
-	im := &index.IndexMeta{
-		Indexes:        map[UniqueID]map[UniqueID]*model.Index{1: {10: idx}},
-		SegmentIndexes: typeutil.NewConcurrentMap[UniqueID, *typeutil.ConcurrentMap[UniqueID, *model.SegmentIndex]](),
-	}
+	im := index.NewIndexMetaForTest(nil, map[UniqueID]map[UniqueID]*model.Index{1: {10: idx}})
 	s := &Server{ctx: context.Background(), meta: &meta.Meta{
 		MetaStore:   store,
 		ChannelSync: meta.NewChannelSync(),
@@ -72,12 +68,10 @@ func newIndexReadinessTestServer(segments []*datapb.SegmentInfo, states map[int6
 		s.meta.Segments.SetSegment(segment.GetID(), meta.NewSegmentInfo(segment))
 	}
 	for segmentID, state := range states {
-		indexes := typeutil.NewConcurrentMap[UniqueID, *model.SegmentIndex]()
-		indexes.Insert(10, &model.SegmentIndex{
+		s.indexMeta.PutSegmentIndexesForTest(&model.SegmentIndex{
 			SegmentID: segmentID, CollectionID: 1, IndexID: 10,
 			IndexState: state, CurrentIndexVersion: 7, FailReason: "build failed",
 		})
-		s.indexMeta.SegmentIndexes.Insert(segmentID, indexes)
 	}
 	s.stateCode.Store(commonpb.StateCode_Healthy)
 	return s, idx

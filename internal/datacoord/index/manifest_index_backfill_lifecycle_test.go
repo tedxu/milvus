@@ -147,7 +147,7 @@ func TestManifestIndexBackfillPublicationPreservesReplacement(t *testing.T) {
 	catalog := metastorekv.NewCatalog(meta.NewMetaMemoryKV(), "", "")
 	m := BootMigrationMeta(t, catalog, meta.RestartCollID)
 	SeedLegacyBackfillRecord(t, m, meta.RestartSegID, meta.RestartBuildID)
-	old, ok := m.IndexCatalog.(*IndexMeta).SegmentBuildInfo.Get(meta.RestartBuildID)
+	old, ok := m.IndexCatalog.(*IndexMeta).Store().GetSegmentIndexByBuildID(meta.RestartBuildID)
 	require.True(t, ok)
 	replacement := model.CloneSegmentIndex(old)
 	replacement.BuildID++

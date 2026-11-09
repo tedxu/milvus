@@ -400,6 +400,7 @@ func (s *Server) initQViewsRuntime() error {
 		s.etcdCli,
 		s.meta.ResourceManager,
 		s.mixCoord,
+		s.metaView,
 	)
 	deps.replicaResources = qviewsReplicaResources{ResourceManager: s.meta.ResourceManager, allocateID: s.idAllocator}
 	runtime, err := newQViewsRuntime(s.ctx, deps)
@@ -463,7 +464,6 @@ func (s *Server) initObserver() {
 		s.meta,
 		s.targetMgr,
 		s.dist,
-		s.broker,
 		s.cluster,
 		s.nodeMgr,
 	)

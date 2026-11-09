@@ -72,7 +72,7 @@ func (s *ClusteringCompactionPolicySuite) SetupTest() {
 
 	compactionTaskMeta, _ := ctask.NewCompactionTaskMeta(context.TODO(), s.catalog)
 	partitionStatsMeta, _ := partitionstats.NewPartitionStatsMeta(context.TODO(), s.catalog)
-	indexMeta, _ := index.NewIndexMeta(context.TODO(), s.catalog, nil)
+	indexMeta, _ := index.RecoverIndexMetaForTest(context.TODO(), s.catalog, nil)
 
 	store := metacache.NewMetaStore(nil)
 	mt := &meta.Meta{

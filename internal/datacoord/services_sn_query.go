@@ -1,19 +1,15 @@
 package datacoord
 
 import (
-	"cmp"
 	"context"
-	"slices"
 
 	"github.com/samber/lo"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/milvus-io/milvus/internal/metastore/kv/binlog"
-	"github.com/milvus-io/milvus/internal/metastore/model"
 	"github.com/milvus-io/milvus/internal/storage"
 	"github.com/milvus-io/milvus/internal/storagev2/packed"
 	"github.com/milvus-io/milvus/pkg/v3/proto/datapb"
-	"github.com/milvus-io/milvus/pkg/v3/proto/indexpb"
 	"github.com/milvus-io/milvus/pkg/v3/proto/viewpb"
 	"github.com/milvus-io/milvus/pkg/v3/util/merr"
 	"github.com/milvus-io/milvus/pkg/v3/util/typeutil"
@@ -158,38 +154,4 @@ func dataViewShardSegmentIDs(shard *viewpb.DataViewOfShard, partitionIDs []int64
 		segmentIDs = append(segmentIDs, partition.GetSegmentIds()...)
 	}
 	return segmentIDs
-}
-
-// GetQueryViewCollectionIndexInfos resolves the exact references of a LoadInfo.
-// With no IDs it lists current selections for publication. Explicit IDs also
-// resolve retained, logically deleted definitions for an older live View.
-func (s *Server) GetQueryViewCollectionIndexInfos(collectionID int64, indexIDs ...int64) []*indexpb.IndexInfo {
-	if len(indexIDs) == 0 {
-		return s.queryViewCollectionIndexInfos(collectionID)
-	}
-	return packQueryViewCollectionIndexInfos(s.indexMeta.GetIndexesByID(collectionID, indexIDs))
-}
-
-func (s *Server) queryViewCollectionIndexInfos(collectionID int64) []*indexpb.IndexInfo {
-	indexes := s.indexMeta.GetIndexesForCollection(collectionID, "")
-	return packQueryViewCollectionIndexInfos(indexes)
-}
-
-func packQueryViewCollectionIndexInfos(indexes []*model.Index) []*indexpb.IndexInfo {
-	infos := lo.Map(indexes, func(index *model.Index, _ int) *indexpb.IndexInfo {
-		return &indexpb.IndexInfo{
-			CollectionID:    index.CollectionID,
-			FieldID:         index.FieldID,
-			IndexName:       index.IndexName,
-			IndexID:         index.IndexID,
-			TypeParams:      index.TypeParams,
-			IndexParams:     index.IndexParams,
-			IsAutoIndex:     index.IsAutoIndex,
-			UserIndexParams: index.UserIndexParams,
-		}
-	})
-	slices.SortFunc(infos, func(left, right *indexpb.IndexInfo) int {
-		return cmp.Compare(left.GetIndexID(), right.GetIndexID())
-	})
-	return infos
 }

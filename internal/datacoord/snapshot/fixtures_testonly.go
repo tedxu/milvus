@@ -77,11 +77,9 @@ type SnapshotTestMetas struct {
 // loadSnapshotTestMetas returns a DomainMetaLoader that builds the index, analyze and snapshot metas into out.
 // It returns the index meta as the index catalog and the snapshot meta as the compaction protection.
 func loadSnapshotTestMetas(catalog metastore.DataCoordCatalog, cm storage.ChunkManager, out *SnapshotTestMetas) meta.DomainMetaLoader {
-	return func(ctx context.Context, collectionIDs []int64) (meta.SegmentIndexCatalog, meta.CompactionProtection, error) {
+	return func(ctx context.Context, store metacache.MetaStore, collectionIDs []int64) (meta.SegmentIndexCatalog, meta.CompactionProtection, error) {
 		var err error
-		if out.IndexMeta, err = index.NewIndexMeta(ctx, catalog, collectionIDs); err != nil {
-			return nil, nil, err
-		}
+		out.IndexMeta = index.NewIndexMeta(ctx, catalog, store)
 		if out.AnalyzeMeta, err = analyze.NewAnalyzeMeta(ctx, catalog); err != nil {
 			return nil, nil, err
 		}

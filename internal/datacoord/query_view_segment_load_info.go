@@ -8,6 +8,7 @@ import (
 
 	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
 	"github.com/milvus-io/milvus/internal/datacoord/meta"
+	"github.com/milvus-io/milvus/internal/metacache"
 	"github.com/milvus-io/milvus/internal/metastore/kv/binlog"
 	"github.com/milvus-io/milvus/internal/metastore/model"
 	"github.com/milvus-io/milvus/internal/util/segmentutil"
@@ -32,7 +33,7 @@ func (s *Server) GetQueryViewSegmentLoadInfos(ctx context.Context, collectionID 
 	}
 
 	indexes, segmentIndexes := s.indexMeta.GetQueryViewIndexSnapshot(collectionID, segmentIDs)
-	indexInfos := packQueryViewCollectionIndexInfos(indexes)
+	indexInfos := metacache.PackIndexInfos(indexes, nil)
 	results := make([]*querypb.QueryViewSegmentLoadInfoResult, 0, len(segmentIDs))
 	seen := make(map[int64]struct{}, len(segmentIDs))
 	for _, segmentID := range segmentIDs {

@@ -109,7 +109,7 @@ func (suite *TargetObserverSuite) SetupTest() {
 	suite.targetMgr = meta.NewTargetManager(suite.broker, suite.meta, suite.metaStore)
 	suite.distMgr = meta.NewDistributionManager(nodeMgr)
 	suite.cluster = session.NewMockCluster(suite.T())
-	suite.observer = NewTargetObserver(suite.meta, suite.targetMgr, suite.distMgr, suite.broker, suite.cluster, nodeMgr)
+	suite.observer = NewTargetObserver(suite.meta, suite.targetMgr, suite.distMgr, suite.cluster, nodeMgr)
 	suite.collectionID = int64(1000)
 	suite.partitionID = int64(100)
 
@@ -157,7 +157,6 @@ func (suite *TargetObserverSuite) SetupTest() {
 
 	expectRecoveryInfo(suite.broker, suite.metaStore, mock.Anything, suite.nextTargetChannels, suite.nextTargetSegments, nil)
 	suite.metaStore.PutCollection(&metacache.CollectionInfo{ID: suite.collectionID})
-	suite.broker.EXPECT().ListIndexes(mock.Anything, mock.Anything).Return(nil, nil).Maybe()
 	suite.cluster.EXPECT().SyncDistribution(mock.Anything, mock.Anything, mock.Anything).Return(merr.Success(), nil).Maybe()
 	suite.observer.Start()
 }
@@ -268,7 +267,6 @@ func (suite *TargetObserverSuite) TestIncrementalUpdate_WithNewSegment() {
 	// These mocks will be used by the background goroutine when it polls for updates
 	expectRecoveryInfo(suite.broker, suite.metaStore, mock.Anything, suite.nextTargetChannels, suite.nextTargetSegments, nil)
 	suite.metaStore.PutCollection(&metacache.CollectionInfo{ID: suite.collectionID})
-	suite.broker.EXPECT().ListIndexes(mock.Anything, mock.Anything).Return(nil, nil).Maybe()
 
 	// Manually trigger update so the observer discovers the new segment immediately
 	// instead of waiting for the background ticker (default interval 10s, which would
@@ -441,7 +439,6 @@ func (suite *TargetObserverCheckSuite) SetupTest() {
 		suite.meta,
 		suite.targetMgr,
 		suite.distMgr,
-		suite.broker,
 		suite.cluster,
 		nodeMgr,
 	)
@@ -475,7 +472,6 @@ func TestShouldUpdateCurrentTarget_EmptyNextTarget(t *testing.T) {
 	nodeMgr := session.NewNodeManager()
 	targetMgr := meta.NewMockTargetManager(t)
 	distMgr := meta.NewDistributionManager(nodeMgr)
-	broker := meta.NewMockBroker(t)
 	cluster := session.NewMockCluster(t)
 
 	// Use a minimal meta without CollectionManager since we only test targetMgr behavior
@@ -483,7 +479,7 @@ func TestShouldUpdateCurrentTarget_EmptyNextTarget(t *testing.T) {
 		CollectionManager: meta.NewCollectionManager(nil, metacache.NewMetaStore(nil)),
 	}
 
-	observer := NewTargetObserver(metaInstance, targetMgr, distMgr, broker, cluster, nodeMgr)
+	observer := NewTargetObserver(metaInstance, targetMgr, distMgr, cluster, nodeMgr)
 
 	// Return empty channels to simulate empty next target
 	targetMgr.EXPECT().GetDmChannelsByCollection(mock.Anything, collectionID, meta.NextTarget).Return(map[string]*meta.DmChannel{}).Maybe()
@@ -505,7 +501,6 @@ func TestShouldUpdateCurrentTarget_ReplicaReadiness(t *testing.T) {
 
 	targetMgr := meta.NewMockTargetManager(t)
 	distMgr := meta.NewDistributionManager(nodeMgr)
-	broker := meta.NewMockBroker(t)
 	cluster := session.NewMockCluster(t)
 
 	// Create mock replicas
@@ -532,7 +527,7 @@ func TestShouldUpdateCurrentTarget_ReplicaReadiness(t *testing.T) {
 		ReplicaManager:    replicaMgr,
 	}
 
-	observer := NewTargetObserver(metaInstance, targetMgr, distMgr, broker, cluster, nodeMgr)
+	observer := NewTargetObserver(metaInstance, targetMgr, distMgr, cluster, nodeMgr)
 
 	// Setup mock expectations
 	channelNames := map[string]*meta.DmChannel{
@@ -549,7 +544,6 @@ func TestShouldUpdateCurrentTarget_ReplicaReadiness(t *testing.T) {
 	targetMgr.EXPECT().GetCollectionTargetVersion(mock.Anything, collectionID, meta.NextTarget).Return(newVersion).Maybe()
 	targetMgr.EXPECT().GetSealedSegmentsByCollection(mock.Anything, collectionID, meta.NextTarget).Return(map[int64]*datapb.SegmentInfo{}).Maybe()
 	viewStore.PutCollection(&metacache.CollectionInfo{ID: collectionID})
-	broker.EXPECT().ListIndexes(mock.Anything, mock.Anything).Return(nil, nil).Maybe()
 	cluster.EXPECT().SyncDistribution(mock.Anything, mock.Anything, mock.Anything).Return(merr.Success(), nil).Maybe()
 
 	// Test case: replica1 (node1) has both channels ready
@@ -630,7 +624,6 @@ func TestShouldUpdateCurrentTarget_OnlyReadyDelegatorsSynced(t *testing.T) {
 
 	targetMgr := meta.NewMockTargetManager(t)
 	distMgr := meta.NewDistributionManager(nodeMgr)
-	broker := meta.NewMockBroker(t)
 	cluster := session.NewMockCluster(t)
 
 	// Create a real replica with node 1 and node 2
@@ -656,7 +649,7 @@ func TestShouldUpdateCurrentTarget_OnlyReadyDelegatorsSynced(t *testing.T) {
 		ReplicaManager:    replicaMgr,
 	}
 
-	observer := NewTargetObserver(metaInstance, targetMgr, distMgr, broker, cluster, nodeMgr)
+	observer := NewTargetObserver(metaInstance, targetMgr, distMgr, cluster, nodeMgr)
 
 	// Setup target manager expectations
 	channelNames := map[string]*meta.DmChannel{
@@ -683,7 +676,6 @@ func TestShouldUpdateCurrentTarget_OnlyReadyDelegatorsSynced(t *testing.T) {
 	// Return segments for CheckSegmentDataReady
 	targetMgr.EXPECT().GetSealedSegmentsByCollection(mock.Anything, collectionID, meta.NextTarget).Return(targetSegments).Maybe()
 
-	broker.EXPECT().ListIndexes(mock.Anything, mock.Anything).Return(nil, nil).Maybe()
 	viewStore.PutCollection(&metacache.CollectionInfo{
 		ID:              collectionID,
 		Schema:          schema,
@@ -776,7 +768,6 @@ func TestShouldUpdateCurrentTarget_AllChannelsSynced(t *testing.T) {
 
 	targetMgr := meta.NewMockTargetManager(t)
 	distMgr := meta.NewDistributionManager(nodeMgr)
-	broker := meta.NewMockBroker(t)
 	cluster := session.NewMockCluster(t)
 
 	// Create a real replica with node 1
@@ -802,7 +793,7 @@ func TestShouldUpdateCurrentTarget_AllChannelsSynced(t *testing.T) {
 		ReplicaManager:    replicaMgr,
 	}
 
-	observer := NewTargetObserver(metaInstance, targetMgr, distMgr, broker, cluster, nodeMgr)
+	observer := NewTargetObserver(metaInstance, targetMgr, distMgr, cluster, nodeMgr)
 
 	// Setup target manager expectations - TWO channels
 	channelNames := map[string]*meta.DmChannel{
@@ -844,7 +835,6 @@ func TestShouldUpdateCurrentTarget_AllChannelsSynced(t *testing.T) {
 	targetMgr.EXPECT().GetSealedSegmentsByCollection(mock.Anything, collectionID, meta.NextTarget).Return(allSegments).Maybe()
 
 	viewStore.PutCollection(&metacache.CollectionInfo{ID: collectionID})
-	broker.EXPECT().ListIndexes(mock.Anything, mock.Anything).Return(nil, nil).Maybe()
 	cluster.EXPECT().SyncDistribution(mock.Anything, mock.Anything, mock.Anything).Return(merr.Success(), nil).Maybe()
 
 	// Node 1 has BOTH channels ready
@@ -919,7 +909,6 @@ func TestShouldUpdateCurrentTarget_PartialChannelsSynced(t *testing.T) {
 
 	targetMgr := meta.NewMockTargetManager(t)
 	distMgr := meta.NewDistributionManager(nodeMgr)
-	broker := meta.NewMockBroker(t)
 	cluster := session.NewMockCluster(t)
 
 	// Create a real replica with node 1
@@ -945,7 +934,7 @@ func TestShouldUpdateCurrentTarget_PartialChannelsSynced(t *testing.T) {
 		ReplicaManager:    replicaMgr,
 	}
 
-	observer := NewTargetObserver(metaInstance, targetMgr, distMgr, broker, cluster, nodeMgr)
+	observer := NewTargetObserver(metaInstance, targetMgr, distMgr, cluster, nodeMgr)
 
 	// Setup target manager expectations - TWO channels in target
 	channelNames := map[string]*meta.DmChannel{
@@ -987,7 +976,6 @@ func TestShouldUpdateCurrentTarget_PartialChannelsSynced(t *testing.T) {
 	targetMgr.EXPECT().GetSealedSegmentsByCollection(mock.Anything, collectionID, meta.NextTarget).Return(allSegments).Maybe()
 
 	viewStore.PutCollection(&metacache.CollectionInfo{ID: collectionID})
-	broker.EXPECT().ListIndexes(mock.Anything, mock.Anything).Return(nil, nil).Maybe()
 	cluster.EXPECT().SyncDistribution(mock.Anything, mock.Anything, mock.Anything).Return(merr.Success(), nil).Maybe()
 
 	// Node 1 has ONLY channel-1 ready, channel-2 is NOT ready (missing segment)
@@ -1045,7 +1033,6 @@ func TestShouldUpdateCurrentTarget_NoReadyDelegators(t *testing.T) {
 
 	targetMgr := meta.NewMockTargetManager(t)
 	distMgr := meta.NewDistributionManager(nodeMgr)
-	broker := meta.NewMockBroker(t)
 	cluster := session.NewMockCluster(t)
 
 	// Create a real replica with node 1
@@ -1071,7 +1058,7 @@ func TestShouldUpdateCurrentTarget_NoReadyDelegators(t *testing.T) {
 		ReplicaManager:    replicaMgr,
 	}
 
-	observer := NewTargetObserver(metaInstance, targetMgr, distMgr, broker, cluster, nodeMgr)
+	observer := NewTargetObserver(metaInstance, targetMgr, distMgr, cluster, nodeMgr)
 
 	// Setup target manager expectations
 	channelNames := map[string]*meta.DmChannel{
@@ -1098,7 +1085,6 @@ func TestShouldUpdateCurrentTarget_NoReadyDelegators(t *testing.T) {
 	targetMgr.EXPECT().GetSealedSegmentsByCollection(mock.Anything, collectionID, meta.NextTarget).Return(targetSegments).Maybe()
 
 	viewStore.PutCollection(&metacache.CollectionInfo{ID: collectionID})
-	broker.EXPECT().ListIndexes(mock.Anything, mock.Anything).Return(nil, nil).Maybe()
 	cluster.EXPECT().SyncDistribution(mock.Anything, mock.Anything, mock.Anything).Return(merr.Success(), nil).Maybe()
 
 	// Node 1 has channel-1 but NOT ready (missing segment)
@@ -1140,7 +1126,6 @@ func TestUpdateAllReplicasCheckpointMetric(t *testing.T) {
 
 	targetMgr := meta.NewMockTargetManager(t)
 	distMgr := meta.NewDistributionManager(nodeMgr)
-	broker := meta.NewMockBroker(t)
 	cluster := session.NewMockCluster(t)
 
 	// Create two replicas: replica1 on node1, replica2 on node2
@@ -1169,7 +1154,7 @@ func TestUpdateAllReplicasCheckpointMetric(t *testing.T) {
 		ReplicaManager:    replicaMgr,
 	}
 
-	observer := NewTargetObserver(metaInstance, targetMgr, distMgr, broker, cluster, nodeMgr)
+	observer := NewTargetObserver(metaInstance, targetMgr, distMgr, cluster, nodeMgr)
 
 	channelName := "channel-1"
 	seekTimestamp := uint64(1000 << 18) // some timestamp

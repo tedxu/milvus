@@ -112,16 +112,14 @@ func TestManifestIndexColumnNames(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ms := metacache.NewMetaStore(nil)
 			ms.PutCollection(&meta.CollectionInfo{ID: collectionID, Schema: schema})
-			im := &index.IndexMeta{
-				Indexes: map[UniqueID]map[UniqueID]*model.Index{
-					collectionID: {indexID: {
-						CollectionID: collectionID,
-						FieldID:      tc.fieldID,
-						IndexID:      indexID,
-						IndexName:    "field_idx",
-					}},
-				},
-			}
+			im := index.NewIndexMetaForTest(nil, map[UniqueID]map[UniqueID]*model.Index{
+				collectionID: {indexID: {
+					CollectionID: collectionID,
+					FieldID:      tc.fieldID,
+					IndexID:      indexID,
+					IndexName:    "field_idx",
+				}},
+			})
 			m := &meta.Meta{
 				MetaStore:    ms,
 				ChunkManager: storage.NewLocalChunkManager(objectstorage.RootPath("files")),

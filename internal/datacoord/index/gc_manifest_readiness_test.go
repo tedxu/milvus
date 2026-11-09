@@ -37,7 +37,7 @@ func TestIndexGCManifestReadinessDeletedRecordWinsOnReload(t *testing.T) {
 	}))
 	require.NoError(t, im.DeleteTask(5100))
 	var err error
-	im, err = NewIndexMeta(context.Background(), m.Catalog, []int64{100})
+	im, err = RecoverIndexMetaForTest(context.Background(), m.Catalog, []int64{100})
 	require.NoError(t, err)
 	m.IndexCatalog = im
 	require.NoError(t, m.ReloadSegmentIndexesFromManifests(context.Background()))

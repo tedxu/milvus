@@ -30,7 +30,6 @@ import (
 	"github.com/milvus-io/milvus/internal/storage"
 	"github.com/milvus-io/milvus/pkg/v3/common"
 	"github.com/milvus-io/milvus/pkg/v3/proto/datapb"
-	"github.com/milvus-io/milvus/pkg/v3/util/typeutil"
 )
 
 const readinessCollID int64 = 100
@@ -83,13 +82,16 @@ func readinessExternalSchema() *schemapb.CollectionSchema {
 // IndexID; segment indexes are keyed by SegmentID.
 func newReadinessIndexMeta(collectionID int64, fieldIndexes map[int64]*model.Index, segIndexes map[int64][]*model.SegmentIndex) *index.IndexMeta {
 	im := index.NewSegmentIndexMeta(datacoord.NewCatalog(meta.NewMetaMemoryKV(), "", ""))
-	im.Indexes[collectionID] = fieldIndexes
-	for segID, segs := range segIndexes {
-		mm := typeutil.NewConcurrentMap[UniqueID, *model.SegmentIndex]()
-		for _, s := range segs {
-			mm.Insert(s.IndexID, s)
+	for indexID, idx := range fieldIndexes {
+		if idx.CollectionID != collectionID || idx.IndexID != indexID {
+			idx = model.CloneIndex(idx)
+			idx.CollectionID = collectionID
+			idx.IndexID = indexID
 		}
-		im.SegmentIndexes.Insert(segID, mm)
+		im.PutIndexesForTest(idx)
+	}
+	for _, segs := range segIndexes {
+		im.PutSegmentIndexesForTest(segs...)
 	}
 	return im
 }
@@ -225,31 +227,19 @@ func TestSegmentReadiness_IndexTerm_VectorIndex(t *testing.T) {
 
 	t.Run("finished index ready", func(t *testing.T) {
 		seg := readyFlushedSegment(1)
-		im.SegmentIndexes.Insert(seg.GetID(), func() *typeutil.ConcurrentMap[UniqueID, *model.SegmentIndex] {
-			mm := typeutil.NewConcurrentMap[UniqueID, *model.SegmentIndex]()
-			mm.Insert(indexID, segmentIndex(seg.GetID(), indexID, commonpb.IndexState_Finished))
-			return mm
-		}())
+		im.PutSegmentIndexesForTest(segmentIndex(seg.GetID(), indexID, commonpb.IndexState_Finished))
 		require.True(t, r.IndexReady(seg))
 	})
 
 	t.Run("unissued index not ready", func(t *testing.T) {
 		seg := readyFlushedSegment(2)
-		im.SegmentIndexes.Insert(seg.GetID(), func() *typeutil.ConcurrentMap[UniqueID, *model.SegmentIndex] {
-			mm := typeutil.NewConcurrentMap[UniqueID, *model.SegmentIndex]()
-			mm.Insert(indexID, segmentIndex(seg.GetID(), indexID, commonpb.IndexState_Unissued))
-			return mm
-		}())
+		im.PutSegmentIndexesForTest(segmentIndex(seg.GetID(), indexID, commonpb.IndexState_Unissued))
 		require.False(t, r.IndexReady(seg))
 	})
 
 	t.Run("in-progress index not ready", func(t *testing.T) {
 		seg := readyFlushedSegment(3)
-		im.SegmentIndexes.Insert(seg.GetID(), func() *typeutil.ConcurrentMap[UniqueID, *model.SegmentIndex] {
-			mm := typeutil.NewConcurrentMap[UniqueID, *model.SegmentIndex]()
-			mm.Insert(indexID, segmentIndex(seg.GetID(), indexID, commonpb.IndexState_InProgress))
-			return mm
-		}())
+		im.PutSegmentIndexesForTest(segmentIndex(seg.GetID(), indexID, commonpb.IndexState_InProgress))
 		require.False(t, r.IndexReady(seg))
 	})
 
@@ -280,12 +270,12 @@ func readinessStructVectorField() *schemapb.StructArrayFieldSchema {
 	}}
 }
 
-func readinessSegmentIndexes(segID int64, states map[int64]commonpb.IndexState) *typeutil.ConcurrentMap[UniqueID, *model.SegmentIndex] {
-	mm := typeutil.NewConcurrentMap[UniqueID, *model.SegmentIndex]()
+func readinessSegmentIndexes(segID int64, states map[int64]commonpb.IndexState) []*model.SegmentIndex {
+	var records []*model.SegmentIndex
 	for indexID, state := range states {
-		mm.Insert(indexID, segmentIndex(segID, indexID, state))
+		records = append(records, segmentIndex(segID, indexID, state))
 	}
-	return mm
+	return records
 }
 
 // TestSegmentReadiness_IndexTerm_StructVectorSubField: the index term waits on
@@ -321,37 +311,37 @@ func TestSegmentReadiness_IndexTerm_StructVectorSubField(t *testing.T) {
 	for _, state := range []commonpb.IndexState{commonpb.IndexState_Unissued, commonpb.IndexState_InProgress, commonpb.IndexState_Failed} {
 		t.Run("sub-field index "+state.String()+" not ready", func(t *testing.T) {
 			seg := readyFlushedSegment(int64(10 + state))
-			im.SegmentIndexes.Insert(seg.GetID(), readinessSegmentIndexes(seg.GetID(), map[int64]commonpb.IndexState{
+			im.PutSegmentIndexesForTest(readinessSegmentIndexes(seg.GetID(), map[int64]commonpb.IndexState{
 				topVecIndexID: commonpb.IndexState_Finished,
 				subVecIndexID: state,
-			}))
+			})...)
 			require.False(t, r.IndexReady(seg), "a finished top-level index must not cover an unfinished sub-field index")
 		})
 	}
 
 	t.Run("sub-field segment index missing not ready", func(t *testing.T) {
 		seg := readyFlushedSegment(1)
-		im.SegmentIndexes.Insert(seg.GetID(), readinessSegmentIndexes(seg.GetID(), map[int64]commonpb.IndexState{
+		im.PutSegmentIndexesForTest(readinessSegmentIndexes(seg.GetID(), map[int64]commonpb.IndexState{
 			topVecIndexID: commonpb.IndexState_Finished,
-		}))
+		})...)
 		require.False(t, r.IndexReady(seg))
 	})
 
 	t.Run("top-level index unfinished not ready", func(t *testing.T) {
 		seg := readyFlushedSegment(2)
-		im.SegmentIndexes.Insert(seg.GetID(), readinessSegmentIndexes(seg.GetID(), map[int64]commonpb.IndexState{
+		im.PutSegmentIndexesForTest(readinessSegmentIndexes(seg.GetID(), map[int64]commonpb.IndexState{
 			topVecIndexID: commonpb.IndexState_InProgress,
 			subVecIndexID: commonpb.IndexState_Finished,
-		}))
+		})...)
 		require.False(t, r.IndexReady(seg))
 	})
 
 	t.Run("all vector indexes finished ready", func(t *testing.T) {
 		seg := readyFlushedSegment(3)
-		im.SegmentIndexes.Insert(seg.GetID(), readinessSegmentIndexes(seg.GetID(), map[int64]commonpb.IndexState{
+		im.PutSegmentIndexesForTest(readinessSegmentIndexes(seg.GetID(), map[int64]commonpb.IndexState{
 			topVecIndexID: commonpb.IndexState_Finished,
 			subVecIndexID: commonpb.IndexState_Finished,
-		}))
+		})...)
 		require.True(t, r.IndexReady(seg))
 	})
 
@@ -365,9 +355,9 @@ func TestSegmentReadiness_IndexTerm_StructVectorSubField(t *testing.T) {
 		r := readinessMeta(coll, topOnly).PrepareReadiness(coll)
 		require.ElementsMatch(t, []int64{topVecFieldID, subVecFieldID}, r.TargetFieldIDs)
 		seg := readyFlushedSegment(4)
-		topOnly.SegmentIndexes.Insert(seg.GetID(), readinessSegmentIndexes(seg.GetID(), map[int64]commonpb.IndexState{
+		topOnly.PutSegmentIndexesForTest(readinessSegmentIndexes(seg.GetID(), map[int64]commonpb.IndexState{
 			topVecIndexID: commonpb.IndexState_Finished,
-		}))
+		})...)
 		require.False(t, r.IndexReady(seg))
 	})
 }
@@ -404,19 +394,19 @@ func TestSegmentReadiness_IndexTerm_StructVectorSubFieldOnly(t *testing.T) {
 
 	t.Run("sub-field index unissued not ready", func(t *testing.T) {
 		seg := readyFlushedSegment(1)
-		im.SegmentIndexes.Insert(seg.GetID(), readinessSegmentIndexes(seg.GetID(), map[int64]commonpb.IndexState{
+		im.PutSegmentIndexesForTest(readinessSegmentIndexes(seg.GetID(), map[int64]commonpb.IndexState{
 			scalarIndexID: commonpb.IndexState_Finished,
 			subVecIndexID: commonpb.IndexState_Unissued,
-		}))
+		})...)
 		require.False(t, r.IndexReady(seg))
 	})
 
 	t.Run("sub-field index finished ready", func(t *testing.T) {
 		seg := readyFlushedSegment(2)
-		im.SegmentIndexes.Insert(seg.GetID(), readinessSegmentIndexes(seg.GetID(), map[int64]commonpb.IndexState{
+		im.PutSegmentIndexesForTest(readinessSegmentIndexes(seg.GetID(), map[int64]commonpb.IndexState{
 			scalarIndexID: commonpb.IndexState_Unissued,
 			subVecIndexID: commonpb.IndexState_Finished,
-		}))
+		})...)
 		require.True(t, r.IndexReady(seg))
 	})
 }
@@ -447,17 +437,13 @@ func TestSegmentReadiness_IndexTerm_PureScalarDegradation(t *testing.T) {
 
 	t.Run("scalar index finished ready", func(t *testing.T) {
 		seg := readyFlushedSegment(1)
-		mm := typeutil.NewConcurrentMap[UniqueID, *model.SegmentIndex]()
-		mm.Insert(indexID, segmentIndex(seg.GetID(), indexID, commonpb.IndexState_Finished))
-		im.SegmentIndexes.Insert(seg.GetID(), mm)
+		im.PutSegmentIndexesForTest(segmentIndex(seg.GetID(), indexID, commonpb.IndexState_Finished))
 		require.True(t, r.IndexReady(seg))
 	})
 
 	t.Run("scalar index unissued not ready", func(t *testing.T) {
 		seg := readyFlushedSegment(2)
-		mm := typeutil.NewConcurrentMap[UniqueID, *model.SegmentIndex]()
-		mm.Insert(indexID, segmentIndex(seg.GetID(), indexID, commonpb.IndexState_Unissued))
-		im.SegmentIndexes.Insert(seg.GetID(), mm)
+		im.PutSegmentIndexesForTest(segmentIndex(seg.GetID(), indexID, commonpb.IndexState_Unissued))
 		require.False(t, r.IndexReady(seg))
 	})
 }
@@ -494,18 +480,16 @@ func TestSegmentReadiness_IndexTerm_DVForceAllIndexReady(t *testing.T) {
 
 	t.Run("vector only finished not ready", func(t *testing.T) {
 		seg := readyFlushedSegment(1)
-		mm := typeutil.NewConcurrentMap[UniqueID, *model.SegmentIndex]()
-		mm.Insert(vecIndexID, segmentIndex(seg.GetID(), vecIndexID, commonpb.IndexState_Finished))
-		im.SegmentIndexes.Insert(seg.GetID(), mm)
+		im.PutSegmentIndexesForTest(segmentIndex(seg.GetID(), vecIndexID, commonpb.IndexState_Finished))
 		require.False(t, r.IndexReady(seg), "scalar-indexed field must also be finished when DVForceAllIndexReady")
 	})
 
 	t.Run("all indexes finished ready", func(t *testing.T) {
 		seg := readyFlushedSegment(2)
-		mm := typeutil.NewConcurrentMap[UniqueID, *model.SegmentIndex]()
-		mm.Insert(vecIndexID, segmentIndex(seg.GetID(), vecIndexID, commonpb.IndexState_Finished))
-		mm.Insert(scalarIndexID, segmentIndex(seg.GetID(), scalarIndexID, commonpb.IndexState_Finished))
-		im.SegmentIndexes.Insert(seg.GetID(), mm)
+		im.PutSegmentIndexesForTest(
+			segmentIndex(seg.GetID(), vecIndexID, commonpb.IndexState_Finished),
+			segmentIndex(seg.GetID(), scalarIndexID, commonpb.IndexState_Finished),
+		)
 		require.True(t, r.IndexReady(seg))
 	})
 }
@@ -628,9 +612,7 @@ func TestSegmentReadiness_Ready(t *testing.T) {
 	seg := readyFlushedSegment(1)
 	seg.NumOfRows = 4096
 	seg.IsSorted = true
-	mm := typeutil.NewConcurrentMap[UniqueID, *model.SegmentIndex]()
-	mm.Insert(indexID, segmentIndex(seg.GetID(), indexID, commonpb.IndexState_Finished))
-	im.SegmentIndexes.Insert(seg.GetID(), mm)
+	im.PutSegmentIndexesForTest(segmentIndex(seg.GetID(), indexID, commonpb.IndexState_Finished))
 
 	require.True(t, r.Ready(seg), "all terms satisfied")
 	require.True(t, r.Predicate()(seg), "Predicate() must agree with Ready()")
@@ -647,9 +629,7 @@ func TestSegmentReadiness_Ready(t *testing.T) {
 	})
 
 	t.Run("index regression makes it not ready", func(t *testing.T) {
-		mm := typeutil.NewConcurrentMap[UniqueID, *model.SegmentIndex]()
-		mm.Insert(indexID, segmentIndex(seg.GetID(), indexID, commonpb.IndexState_Unissued))
-		im.SegmentIndexes.Insert(seg.GetID(), mm)
+		im.PutSegmentIndexesForTest(segmentIndex(seg.GetID(), indexID, commonpb.IndexState_Unissued))
 		seg.IsInvisible = true
 		require.False(t, r.Ready(seg))
 	})

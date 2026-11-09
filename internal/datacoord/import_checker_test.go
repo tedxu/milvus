@@ -293,14 +293,12 @@ func (s *ImportCheckerSuite) TestCheckJob() {
 
 	// test check IndexBuilding job — transitions to Uncommitted, segments keep is_importing=true
 	// until HandleCommitVchannel runs after the WAL commit fence.
-	s.checker.IndexMeta.Indexes[job.GetCollectionID()] = map[UniqueID]*model.Index{
-		100: {
-			CollectionID: job.GetCollectionID(),
-			FieldID:      100,
-			IndexID:      100,
-			IndexName:    "import_idx",
-		},
-	}
+	s.checker.IndexMeta.PutIndexesForTest(&model.Index{
+		CollectionID: job.GetCollectionID(),
+		FieldID:      100,
+		IndexID:      100,
+		IndexName:    "import_idx",
+	})
 	paramtable.Get().Save(paramtable.Get().DataCoordCfg.WaitForIndex.Key, "false")
 	defer paramtable.Get().Reset(paramtable.Get().DataCoordCfg.WaitForIndex.Key)
 	meta.DrainBuildIndexChForTest()

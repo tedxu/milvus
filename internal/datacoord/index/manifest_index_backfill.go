@@ -216,7 +216,7 @@ func (i *ManifestIndexBackfillInspector) scan(ctx context.Context) ([]segmentMan
 	// task-only records do not cause per-segment lookups or index-map copies.
 	groups := make(map[int64]*segmentManifestIndexBackfill)
 	pending := 0
-	i.indexMeta.SegmentBuildInfo.buildID2SegmentIndex.Range(func(_ int64, record *model.SegmentIndex) bool {
+	i.indexMeta.rangeSegmentIndexBuilds(func(record *model.SegmentIndex) bool {
 		if ctx.Err() != nil {
 			return false
 		}
@@ -226,11 +226,7 @@ func (i *ManifestIndexBackfillInspector) scan(ctx context.Context) ([]segmentMan
 		}
 		// The build table also retains superseded records for GC. Only the
 		// current (segment, index) occupant can supply a manifest entry.
-		indexes, ok := i.indexMeta.SegmentIndexes.Get(record.SegmentID)
-		if !ok {
-			return true
-		}
-		current, ok := indexes.Get(record.IndexID)
+		current, ok := i.indexMeta.store.GetSegmentIndex(record.SegmentID, record.IndexID)
 		if !ok || current.BuildID != record.BuildID {
 			return true
 		}

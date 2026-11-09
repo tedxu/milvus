@@ -209,7 +209,6 @@ func (suite *CollectionObserverSuite) SetupTest() {
 	suite.targetObserver = NewTargetObserver(suite.meta,
 		suite.targetMgr,
 		suite.dist,
-		suite.broker,
 		suite.cluster,
 		suite.nodeMgr,
 	)
@@ -395,7 +394,6 @@ func (suite *CollectionObserverSuite) TestObserve() {
 	for _, collection := range suite.collections {
 		suite.metaStore.PutCollection(&metacache.CollectionInfo{ID: collection})
 	}
-	suite.broker.EXPECT().ListIndexes(mock.Anything, mock.Anything).Return(nil, nil).Maybe()
 	suite.cluster.EXPECT().SyncDistribution(mock.Anything, mock.Anything, mock.Anything).Return(merr.Success(), nil).Maybe()
 
 	suite.Eventually(func() bool {

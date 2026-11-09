@@ -910,6 +910,17 @@ func (t *compactionTrigger) ShouldDoSingleCompaction(segment *meta.SegmentInfo, 
 	return false
 }
 
+// indexTypeOf reads the index type from the shared store without cloning the
+// params, since this runs for every segment index on each trigger cycle. A
+// missing definition yields "", as GetIndexParams' nil params did.
+func (t *compactionTrigger) indexTypeOf(collectionID, indexID int64) string {
+	index, ok := t.indexMeta.Store().GetIndex(collectionID, indexID)
+	if !ok {
+		return ""
+	}
+	return meta.GetIndexType(index.IndexParams)
+}
+
 func (t *compactionTrigger) ShouldRebuildSegmentIndex(segment *meta.SegmentInfo) bool {
 	if Params.DataCoordCfg.AutoUpgradeSegmentIndex.GetAsBool() {
 		// index version of segment lower than resolved version and IndexFileKeys should have value, trigger compaction
@@ -919,8 +930,7 @@ func (t *compactionTrigger) ShouldRebuildSegmentIndex(segment *meta.SegmentInfo)
 				continue
 			}
 
-			indexParams := t.indexMeta.GetIndexParams(segment.CollectionID, idx.IndexID)
-			indexType := meta.GetIndexType(indexParams)
+			indexType := t.indexTypeOf(segment.CollectionID, idx.IndexID)
 			isVectorIndex := vecindexmgr.GetVecIndexMgrInstance().IsVecIndex(indexType)
 
 			var resolvedEngineVersion int32
@@ -956,8 +966,7 @@ func (t *compactionTrigger) ShouldRebuildSegmentIndex(segment *meta.SegmentInfo)
 				continue
 			}
 
-			indexParams := t.indexMeta.GetIndexParams(segment.CollectionID, idx.IndexID)
-			indexType := meta.GetIndexType(indexParams)
+			indexType := t.indexTypeOf(segment.CollectionID, idx.IndexID)
 			isVectorIndex := vecindexmgr.GetVecIndexMgrInstance().IsVecIndex(indexType)
 
 			// ForceRebuildSegmentIndex with TargetVecIndexVersion only applies to vector indexes
@@ -987,8 +996,7 @@ func (t *compactionTrigger) ShouldRebuildSegmentIndex(segment *meta.SegmentInfo)
 				continue
 			}
 
-			indexParams := t.indexMeta.GetIndexParams(segment.CollectionID, idx.IndexID)
-			indexType := meta.GetIndexType(indexParams)
+			indexType := t.indexTypeOf(segment.CollectionID, idx.IndexID)
 			isVectorIndex := vecindexmgr.GetVecIndexMgrInstance().IsVecIndex(indexType)
 
 			if isVectorIndex {

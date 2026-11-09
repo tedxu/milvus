@@ -27,6 +27,7 @@ import (
 
 	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
 	"github.com/milvus-io/milvus/internal/datacoord/meta"
+	"github.com/milvus-io/milvus/internal/metacache"
 	"github.com/milvus-io/milvus/internal/metastore"
 	catalogmocks "github.com/milvus-io/milvus/internal/metastore/mocks"
 	"github.com/milvus-io/milvus/internal/metastore/model"
@@ -39,7 +40,6 @@ import (
 	"github.com/milvus-io/milvus/pkg/v3/proto/workerpb"
 	"github.com/milvus-io/milvus/pkg/v3/util/lock"
 	"github.com/milvus-io/milvus/pkg/v3/util/paramtable"
-	"github.com/milvus-io/milvus/pkg/v3/util/typeutil"
 )
 
 func NewTestVersionManager() IndexEngineVersionManager {
@@ -53,12 +53,8 @@ type IndexTestMetas struct {
 
 // loadIndexTestMetas returns a DomainMetaLoader that builds only the index meta into out and returns it as the index catalog.
 func LoadIndexTestMetas(catalog metastore.DataCoordCatalog, out *IndexTestMetas) meta.DomainMetaLoader {
-	return func(ctx context.Context, collectionIDs []int64) (meta.SegmentIndexCatalog, meta.CompactionProtection, error) {
-		var err error
-		out.IndexMeta, err = NewIndexMeta(ctx, catalog, collectionIDs)
-		if err != nil {
-			return nil, nil, err
-		}
+	return func(ctx context.Context, store metacache.MetaStore, collectionIDs []int64) (meta.SegmentIndexCatalog, meta.CompactionProtection, error) {
+		out.IndexMeta = NewIndexMeta(ctx, catalog, store)
 		return out.IndexMeta, nil, nil
 	}
 }
@@ -86,15 +82,43 @@ func BootMetaForRestart(t *testing.T, catalog metastore.DataCoordCatalog, collec
 	return m, dm
 }
 
+// RecoverIndexMetaForTest recovers the index metadata of collectionIDs from
+// catalog the way DataCoord recovery does: a new store over catalog loads it,
+// and the returned writer rebuilds its state from that store.
+func RecoverIndexMetaForTest(ctx context.Context, catalog metastore.DataCoordCatalog, collectionIDs []int64) (*IndexMeta, error) {
+	store := metacache.NewMetaStore(catalog)
+	if err := store.LoadIndexesFromCatalog(ctx, collectionIDs); err != nil {
+		return nil, err
+	}
+	im := NewIndexMeta(ctx, catalog, store)
+	im.RebuildFromStore()
+	return im, nil
+}
+
 func NewSegmentIndexMeta(catalog metastore.DataCoordCatalog) *IndexMeta {
 	return &IndexMeta{
 		KeyLock:          lock.NewKeyLock[UniqueID](),
 		ctx:              context.Background(),
 		Catalog:          catalog,
-		Indexes:          make(map[UniqueID]map[UniqueID]*model.Index),
+		store:            metacache.NewMetaStore(nil),
 		SegmentBuildInfo: NewSegmentIndexBuildInfo(),
-		SegmentIndexes:   typeutil.NewConcurrentMap[UniqueID, *typeutil.ConcurrentMap[UniqueID, *model.SegmentIndex]](),
 	}
+}
+
+// NewIndexMetaForTest builds an IndexMeta over its own store, seeded with
+// indexes (collection ID -> index ID -> definition) and records, which become
+// the current builds of their (segment, index).
+func NewIndexMetaForTest(catalog metastore.DataCoordCatalog, indexes map[int64]map[int64]*model.Index, records ...*model.SegmentIndex) *IndexMeta {
+	im := NewSegmentIndexMeta(catalog)
+	for _, collectionIndexes := range indexes {
+		for _, index := range collectionIndexes {
+			im.store.PutIndex(index)
+		}
+	}
+	if len(records) > 0 {
+		im.store.PutSegmentIndexes(records...)
+	}
+	return im
 }
 
 const restartPartID = UniqueID(30)
@@ -181,15 +205,7 @@ func CreateTestIndexMeta(t *testing.T, collectionID int64, indexes map[int64]*mo
 		cat = mockCat
 	}
 
-	im := &IndexMeta{
-		ctx:              context.Background(),
-		Catalog:          cat,
-		KeyLock:          lock.NewKeyLock[UniqueID](),
-		Indexes:          map[UniqueID]map[UniqueID]*model.Index{collectionID: indexes},
-		SegmentBuildInfo: NewSegmentIndexBuildInfo(),
-		SegmentIndexes:   typeutil.NewConcurrentMap[UniqueID, *typeutil.ConcurrentMap[UniqueID, *model.SegmentIndex]](),
-	}
-	return im
+	return NewIndexMetaForTest(cat, map[int64]map[int64]*model.Index{collectionID: indexes})
 }
 
 func JSONArrayVersionManager(t *testing.T, version int32) IndexEngineVersionManager {
@@ -220,21 +236,18 @@ func ResetJSONVersionTargets(t *testing.T) {
 }
 
 func NewTestIndexMeta(collID, segID, indexID int64, indexType string, segIdx *model.SegmentIndex) *IndexMeta {
-	im := NewSegmentIndexMeta(nil)
-	im.Indexes[collID] = map[UniqueID]*model.Index{
-		indexID: {
-			CollectionID: collID,
-			IndexID:      indexID,
-			IndexName:    "test_idx",
-			IndexParams: []*commonpb.KeyValuePair{
-				{Key: common.IndexTypeKey, Value: indexType},
+	return NewIndexMetaForTest(nil, map[int64]map[int64]*model.Index{
+		collID: {
+			indexID: {
+				CollectionID: collID,
+				IndexID:      indexID,
+				IndexName:    "test_idx",
+				IndexParams: []*commonpb.KeyValuePair{
+					{Key: common.IndexTypeKey, Value: indexType},
+				},
 			},
 		},
-	}
-	segIdxMap := typeutil.NewConcurrentMap[UniqueID, *model.SegmentIndex]()
-	segIdxMap.Insert(indexID, segIdx)
-	im.SegmentIndexes.Insert(segID, segIdxMap)
-	return im
+	}, segIdx)
 }
 
 func (i *ManifestIndexBackfillInspector) RunOnceForTest(ctx context.Context) bool {
@@ -285,4 +298,49 @@ func newMigrationManifestReadIO(t *testing.T) *packed.ManifestIOContext {
 	io := packed.NewManifestIOContext(1)
 	t.Cleanup(io.Close)
 	return io
+}
+
+// IndexForTest returns the stored definition of (collectionID, indexID), or
+// nil. It is the store's own pointer: tests may modify it to stage a state.
+func (m *IndexMeta) IndexForTest(collectionID, indexID int64) *model.Index {
+	index, _ := m.store.GetIndex(collectionID, indexID)
+	return index
+}
+
+// PutIndexesForTest installs definitions without a catalog write.
+func (m *IndexMeta) PutIndexesForTest(indexes ...*model.Index) {
+	for _, index := range indexes {
+		m.store.PutIndex(index)
+	}
+}
+
+// PutSegmentIndexesForTest installs records as the current builds of their
+// (segment, index), and in the build lookup, without a catalog write.
+func (m *IndexMeta) PutSegmentIndexesForTest(records ...*model.SegmentIndex) {
+	m.store.PutSegmentIndexes(records...)
+}
+
+// PutBuildForTest installs a record in the build lookup only, unless it is
+// already the current build of its (segment, index).
+func (m *IndexMeta) PutBuildForTest(record *model.SegmentIndex) {
+	m.store.UpdateSegmentIndexBuild(record)
+}
+
+// RemoveBuildForTest drops a build, and the current record of its
+// (segment, index) if that is the same build.
+func (m *IndexMeta) RemoveBuildForTest(buildID int64) {
+	if record, ok := m.store.GetSegmentIndexByBuildID(buildID); ok {
+		m.store.RemoveSegmentIndex(record)
+	}
+}
+
+// SegmentCountForTest returns how many segments have a current index record.
+func (m *IndexMeta) SegmentCountForTest() int {
+	segments := make(map[int64]struct{})
+	for _, record := range m.store.ListSegmentIndexBuilds() {
+		if current, ok := m.store.GetSegmentIndex(record.SegmentID, record.IndexID); ok && current.BuildID == record.BuildID {
+			segments[record.SegmentID] = struct{}{}
+		}
+	}
+	return len(segments)
 }

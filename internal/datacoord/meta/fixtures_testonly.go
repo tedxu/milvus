@@ -353,7 +353,7 @@ func (mm *metaMemoryKV) CompareVersionAndSwap(ctx context.Context, key string, v
 }
 
 // noDomainMetas is a DomainMetaLoader that builds no domain metas.
-func NoDomainMetas(context.Context, []int64) (SegmentIndexCatalog, CompactionProtection, error) {
+func NoDomainMetas(context.Context, metacache.MetaStore, []int64) (SegmentIndexCatalog, CompactionProtection, error) {
 	return nil, nil, nil
 }
 

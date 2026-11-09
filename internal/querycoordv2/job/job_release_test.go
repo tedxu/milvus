@@ -152,7 +152,7 @@ func newReleaseJobDeps(t *testing.T, m *meta.Meta, dist *meta.DistributionManage
 	targetMgr.EXPECT().RemoveCollection(mock.Anything, mock.Anything).Return().Maybe()
 	nodeMgr := session.NewNodeManager()
 
-	targetObserver := observers.NewTargetObserver(m, targetMgr, dist, nil, nil, nodeMgr)
+	targetObserver := observers.NewTargetObserver(m, targetMgr, dist, nil, nodeMgr)
 	targetObserver.Start()
 	t.Cleanup(targetObserver.Stop)
 
