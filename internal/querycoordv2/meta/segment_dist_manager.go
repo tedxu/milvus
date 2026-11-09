@@ -22,7 +22,6 @@ import (
 	"sync"
 
 	"github.com/samber/lo"
-	"google.golang.org/protobuf/proto"
 
 	"github.com/milvus-io/milvus/internal/metacache"
 	"github.com/milvus-io/milvus/internal/util/metrics"
@@ -44,13 +43,13 @@ type segDistCriterion struct {
 }
 
 type SegmentDistFilter interface {
-	Match(s *Segment) bool
+	Match(s *LoadedSegment) bool
 	AddFilter(*segDistCriterion)
 }
 
-type SegmentDistFilterFunc func(s *Segment) bool
+type SegmentDistFilterFunc func(s *LoadedSegment) bool
 
-func (f SegmentDistFilterFunc) Match(s *Segment) bool {
+func (f SegmentDistFilterFunc) Match(s *LoadedSegment) bool {
 	return f(s)
 }
 
@@ -62,7 +61,7 @@ type ReplicaSegDistFilter struct {
 	*Replica
 }
 
-func (f *ReplicaSegDistFilter) Match(s *Segment) bool {
+func (f *ReplicaSegDistFilter) Match(s *LoadedSegment) bool {
 	return f.GetCollectionID() == s.GetCollectionID() && f.Contains(s.Node)
 }
 
@@ -79,7 +78,7 @@ func WithReplica(replica *Replica) SegmentDistFilter {
 
 type NodeSegDistFilter int64
 
-func (f NodeSegDistFilter) Match(s *Segment) bool {
+func (f NodeSegDistFilter) Match(s *LoadedSegment) bool {
 	return s.Node == int64(f)
 }
 
@@ -93,7 +92,7 @@ func WithNodeID(nodeID int64) SegmentDistFilter {
 
 type SegmentIDSegDistFilter int64
 
-func (f SegmentIDSegDistFilter) Match(s *Segment) bool {
+func (f SegmentIDSegDistFilter) Match(s *LoadedSegment) bool {
 	return s.GetID() == int64(f)
 }
 
@@ -108,7 +107,7 @@ func WithSegmentID(segmentID int64) SegmentDistFilter {
 
 type CollectionSegDistFilter int64
 
-func (f CollectionSegDistFilter) Match(s *Segment) bool {
+func (f CollectionSegDistFilter) Match(s *LoadedSegment) bool {
 	return s.GetCollectionID() == int64(f)
 }
 
@@ -122,7 +121,7 @@ func WithCollectionID(collectionID typeutil.UniqueID) SegmentDistFilter {
 
 type ChannelSegDistFilter string
 
-func (f ChannelSegDistFilter) Match(s *Segment) bool {
+func (f ChannelSegDistFilter) Match(s *LoadedSegment) bool {
 	return s.GetInsertChannel() == string(f)
 }
 
@@ -134,9 +133,17 @@ func WithChannel(channelName string) SegmentDistFilter {
 	return ChannelSegDistFilter(channelName)
 }
 
-type Segment struct {
-	*datapb.SegmentInfo
-	Node               int64  // Node the segment is in
+// LoadedSegment records what one QueryNode reports it loaded for a sealed
+// segment. Every other segment field is read from the shared store by ID.
+type LoadedSegment struct {
+	ID int64
+	// CollectionID and Channel are identity keys for filtering and for
+	// releasing a segment the store no longer has: the store's values, or
+	// the node's report when the store has no entry.
+	CollectionID int64
+	Channel      string
+	Node         int64 // Node the segment is in
+
 	Version            int64  // Version is the timestamp of loading segment
 	LastDeltaTimestamp uint64 // The timestamp of the last delta record
 	// IndexBuilds maps each loaded index ID to the build the node loaded.
@@ -145,18 +152,17 @@ type Segment struct {
 	// JSONStatsFormats maps each field with loaded JSON key stats to the
 	// data format version the node loaded.
 	JSONStatsFormats map[int64]int64
-	ManifestPath     string // current manifest path of loaded segment
+	ManifestPath     string // manifest path of the loaded segment, as reported
 	// DataVersion tracks the storage v2 data version of the loaded segment.
 	// nil means the reporting QueryNode does not support DataVersion (mixed-version rollout),
 	// so the field is not comparable.
 	DataVersion *int32
 }
 
-func SegmentFromInfo(info *datapb.SegmentInfo) *Segment {
-	return &Segment{
-		SegmentInfo: info,
-	}
-}
+// GetID, GetCollectionID and GetInsertChannel return the record's identity.
+func (s *LoadedSegment) GetID() int64             { return s.ID }
+func (s *LoadedSegment) GetCollectionID() int64   { return s.CollectionID }
+func (s *LoadedSegment) GetInsertChannel() string { return s.Channel }
 
 // LoadedFieldIndexInfos describes the indexes a node loaded for a segment,
 // sorted by index ID. builds maps index ID to the loaded build; every other
@@ -184,8 +190,14 @@ func LoadedFieldIndexInfos(view metacache.MetaView, collectionID, segmentID int6
 	return infos
 }
 
-func newSegmentMetricsFrom(segment *Segment, view metacache.MetaView) *metricsinfo.Segment {
-	convertedSegment := metrics.NewSegmentFrom(segment.SegmentInfo)
+// newSegmentMetricsFrom describes a loaded segment with the store's fields.
+// On a store miss only the record's identity and node are filled.
+func newSegmentMetricsFrom(segment *LoadedSegment, view metacache.MetaView) *metricsinfo.Segment {
+	info, ok := view.GetSegment(segment.ID)
+	if !ok {
+		info = &datapb.SegmentInfo{ID: segment.ID, CollectionID: segment.CollectionID, InsertChannel: segment.Channel}
+	}
+	convertedSegment := metrics.NewSegmentFrom(info)
 	convertedSegment.NodeID = segment.Node
 	convertedSegment.LoadedTimestamp = tsoutil.PhysicalTimeFormat(segment.LastDeltaTimestamp)
 	loaded := LoadedFieldIndexInfos(view, segment.GetCollectionID(), segment.GetID(), segment.IndexBuilds)
@@ -201,23 +213,10 @@ func newSegmentMetricsFrom(segment *Segment, view metacache.MetaView) *metricsin
 	return convertedSegment
 }
 
-func (segment *Segment) Clone() *Segment {
-	clone := &Segment{
-		SegmentInfo: proto.Clone(segment.SegmentInfo).(*datapb.SegmentInfo),
-		Node:        segment.Node,
-		Version:     segment.Version,
-	}
-	if segment.DataVersion != nil {
-		v := *segment.DataVersion
-		clone.DataVersion = &v
-	}
-	return clone
-}
-
 type SegmentDistManagerInterface interface {
-	Update(nodeID typeutil.UniqueID, segments ...*Segment)
-	Patch(nodeID typeutil.UniqueID, upserts []*Segment, removedSegmentIDs []int64)
-	GetByFilter(filters ...SegmentDistFilter) []*Segment
+	Update(nodeID typeutil.UniqueID, segments ...*LoadedSegment)
+	Patch(nodeID typeutil.UniqueID, upserts []*LoadedSegment, removedSegmentIDs []int64)
+	GetByFilter(filters ...SegmentDistFilter) []*LoadedSegment
 	GetSegmentDist(collectionID int64, view metacache.MetaView) []*metricsinfo.Segment
 	GetVersion() int64
 }
@@ -225,7 +224,7 @@ type SegmentDistManagerInterface interface {
 type SegmentDistManager struct {
 	rwmutex sync.RWMutex
 
-	// nodeID -> []*Segment
+	// nodeID -> []*LoadedSegment
 	segments map[typeutil.UniqueID]nodeSegments
 	version  int64
 }
@@ -237,14 +236,14 @@ func (m *SegmentDistManager) GetVersion() int64 {
 }
 
 type nodeSegments struct {
-	segments        []*Segment
-	collSegments    map[int64][]*Segment
-	channelSegments map[string][]*Segment
-	segmentSegments map[int64][]*Segment
+	segments        []*LoadedSegment
+	collSegments    map[int64][]*LoadedSegment
+	channelSegments map[string][]*LoadedSegment
+	segmentSegments map[int64][]*LoadedSegment
 }
 
-func (s nodeSegments) Filter(criterion *segDistCriterion, filter func(*Segment) bool) []*Segment {
-	var segments []*Segment
+func (s nodeSegments) Filter(criterion *segDistCriterion, filter func(*LoadedSegment) bool) []*LoadedSegment {
+	var segments []*LoadedSegment
 	needFilter := criterion.hasOtherFilter
 	switch {
 	case criterion.hasSegmentID:
@@ -258,19 +257,19 @@ func (s nodeSegments) Filter(criterion *segDistCriterion, filter func(*Segment) 
 		segments = s.segments
 	}
 	if needFilter {
-		segments = lo.Filter(segments, func(segment *Segment, _ int) bool {
+		segments = lo.Filter(segments, func(segment *LoadedSegment, _ int) bool {
 			return filter(segment)
 		})
 	}
 	return segments
 }
 
-func composeNodeSegments(segments []*Segment) nodeSegments {
+func composeNodeSegments(segments []*LoadedSegment) nodeSegments {
 	return nodeSegments{
 		segments:        segments,
-		collSegments:    lo.GroupBy(segments, func(segment *Segment) int64 { return segment.GetCollectionID() }),
-		channelSegments: lo.GroupBy(segments, func(segment *Segment) string { return segment.GetInsertChannel() }),
-		segmentSegments: lo.GroupBy(segments, func(segment *Segment) int64 { return segment.GetID() }),
+		collSegments:    lo.GroupBy(segments, func(segment *LoadedSegment) int64 { return segment.GetCollectionID() }),
+		channelSegments: lo.GroupBy(segments, func(segment *LoadedSegment) string { return segment.GetInsertChannel() }),
+		segmentSegments: lo.GroupBy(segments, func(segment *LoadedSegment) int64 { return segment.GetID() }),
 	}
 }
 
@@ -280,7 +279,7 @@ func NewSegmentDistManager() *SegmentDistManager {
 	}
 }
 
-func (m *SegmentDistManager) Update(nodeID typeutil.UniqueID, segments ...*Segment) {
+func (m *SegmentDistManager) Update(nodeID typeutil.UniqueID, segments ...*LoadedSegment) {
 	m.rwmutex.Lock()
 	defer m.rwmutex.Unlock()
 
@@ -298,7 +297,7 @@ func (m *SegmentDistManager) Update(nodeID typeutil.UniqueID, segments ...*Segme
 	m.version++
 }
 
-func (m *SegmentDistManager) Patch(nodeID typeutil.UniqueID, upserts []*Segment, removedSegmentIDs []int64) {
+func (m *SegmentDistManager) Patch(nodeID typeutil.UniqueID, upserts []*LoadedSegment, removedSegmentIDs []int64) {
 	if len(upserts) == 0 && len(removedSegmentIDs) == 0 {
 		return
 	}
@@ -310,14 +309,14 @@ func (m *SegmentDistManager) Patch(nodeID typeutil.UniqueID, upserts []*Segment,
 	for _, segmentID := range removedSegmentIDs {
 		removedSegments[segmentID] = struct{}{}
 	}
-	upsertSegments := make(map[int64]*Segment, len(upserts))
+	upsertSegments := make(map[int64]*LoadedSegment, len(upserts))
 	for _, segment := range upserts {
 		segment.Node = nodeID
 		upsertSegments[segment.GetID()] = segment
 	}
 
 	existing := m.segments[nodeID].segments
-	segments := make([]*Segment, 0, len(existing)+len(upserts))
+	segments := make([]*LoadedSegment, 0, len(existing)+len(upserts))
 	for _, segment := range existing {
 		segmentID := segment.GetID()
 		if _, ok := removedSegments[segmentID]; ok {
@@ -340,7 +339,7 @@ func (m *SegmentDistManager) Patch(nodeID typeutil.UniqueID, upserts []*Segment,
 }
 
 // GetByFilter return segment list which match all given filters
-func (m *SegmentDistManager) GetByFilter(filters ...SegmentDistFilter) []*Segment {
+func (m *SegmentDistManager) GetByFilter(filters ...SegmentDistFilter) []*LoadedSegment {
 	m.rwmutex.RLock()
 	defer m.rwmutex.RUnlock()
 
@@ -349,7 +348,7 @@ func (m *SegmentDistManager) GetByFilter(filters ...SegmentDistFilter) []*Segmen
 		filter.AddFilter(criterion)
 	}
 
-	mergedFilters := func(s *Segment) bool {
+	mergedFilters := func(s *LoadedSegment) bool {
 		for _, f := range filters {
 			if f != nil && !f.Match(s) {
 				return false
@@ -358,7 +357,7 @@ func (m *SegmentDistManager) GetByFilter(filters ...SegmentDistFilter) []*Segmen
 		return true
 	}
 
-	var ret []*Segment
+	var ret []*LoadedSegment
 	if criterion.nodes != nil {
 		for _, nodeID := range criterion.nodes {
 			ret = append(ret, m.segments[nodeID].Filter(criterion, mergedFilters)...)

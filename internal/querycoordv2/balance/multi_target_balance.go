@@ -579,11 +579,11 @@ func (b *MultiTargetBalancer) genSegmentPlan(ctx context.Context, replica *meta.
 	globalNodeSegments := make(map[int64][]assign.SegmentRef)
 	for _, node := range rwNodes {
 		dist := b.dist.SegmentDistManager.GetByFilter(meta.WithCollectionID(replica.GetCollectionID()), meta.WithNodeID(node))
-		segments := lo.Filter(dist, func(segment *meta.Segment, _ int) bool {
+		segments := lo.Filter(dist, func(segment *meta.LoadedSegment, _ int) bool {
 			return b.targetMgr.CanSegmentBeMoved(ctx, segment.GetCollectionID(), segment.GetID())
 		})
-		nodeSegments[node] = assign.SegmentRefsFromDist(segments)
-		globalNodeSegments[node] = assign.SegmentRefsFromDist(b.dist.SegmentDistManager.GetByFilter(meta.WithNodeID(node)))
+		nodeSegments[node] = assign.SegmentRefsFromDist(b.dist.MetaView(), segments)
+		globalNodeSegments[node] = assign.SegmentRefsFromDist(b.dist.MetaView(), b.dist.SegmentDistManager.GetByFilter(meta.WithNodeID(node)))
 	}
 
 	plans := b.genPlanByDistributions(nodeSegments, globalNodeSegments)

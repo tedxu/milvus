@@ -77,7 +77,7 @@ func (suite *DistControllerTestSuite) SetupTest() {
 	suite.meta = meta.NewMeta(idAllocator, store, suite.nodeMgr, metacache.NewMetaStore(nil))
 
 	suite.mockCluster = session.NewMockCluster(suite.T())
-	distManager := meta.NewDistributionManager(suite.nodeMgr)
+	distManager := meta.NewDistributionManager(suite.nodeMgr, meta.WithMetaView(metacache.NewMetaStore(nil)))
 	suite.broker = meta.NewMockBroker(suite.T())
 	targetManager := meta.NewTargetManager(suite.broker, suite.meta, metacache.NewMetaStore(nil))
 	suite.mockScheduler = task.NewMockScheduler(suite.T())

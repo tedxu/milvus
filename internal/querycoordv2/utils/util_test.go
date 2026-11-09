@@ -278,14 +278,14 @@ func (suite *UtilTestSuite) TestCheckSegmentDataReady_ManifestComparison() {
 
 	newDistManager := func(manifestPath string) *meta.DistributionManager {
 		dm := meta.NewDistributionManager(session.NewNodeManager())
-		dm.SegmentDistManager.Update(nodeID, &meta.Segment{
+		dm.SegmentDistManager.Update(nodeID, meta.SeedInto(dm, &meta.SegmentFixture{
 			SegmentInfo: &datapb.SegmentInfo{
 				ID:           segmentID,
 				CollectionID: collectionID,
 			},
 			Node:         nodeID,
 			ManifestPath: manifestPath,
-		})
+		})...)
 		return dm
 	}
 
@@ -345,7 +345,7 @@ func (suite *UtilTestSuite) TestCheckSegmentDataReady_DataVersion() {
 
 	newDistManager := func(distDataVersion *int32) *meta.DistributionManager {
 		dm := meta.NewDistributionManager(session.NewNodeManager())
-		dm.SegmentDistManager.Update(nodeID, &meta.Segment{
+		dm.SegmentDistManager.Update(nodeID, meta.SeedInto(dm, &meta.SegmentFixture{
 			SegmentInfo: &datapb.SegmentInfo{
 				ID:           segmentID,
 				CollectionID: collectionID,
@@ -353,7 +353,7 @@ func (suite *UtilTestSuite) TestCheckSegmentDataReady_DataVersion() {
 			Node:         nodeID,
 			ManifestPath: manifest,
 			DataVersion:  distDataVersion,
-		})
+		})...)
 		return dm
 	}
 

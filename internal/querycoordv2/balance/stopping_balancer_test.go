@@ -168,7 +168,7 @@ func (suite *StoppingBalancerTestSuite) TestBalanceReplica_WithRONodes() {
 	}
 
 	// Add some segments on RO nodes
-	segments := []*meta.Segment{
+	segments := []*meta.SegmentFixture{
 		{
 			SegmentInfo: &datapb.SegmentInfo{
 				ID:            101,
@@ -192,7 +192,7 @@ func (suite *StoppingBalancerTestSuite) TestBalanceReplica_WithRONodes() {
 	}
 
 	for _, segment := range segments {
-		suite.dist.SegmentDistManager.Update(segment.Node, segment)
+		suite.dist.SegmentDistManager.Update(segment.Node, meta.SeedInto(suite.dist, segment)...)
 	}
 
 	// Add target segments

@@ -64,14 +64,10 @@ func TestChannelLevelScoreBalancer_StreamingRWSQDoesNotBlockSegmentBalance(t *te
 
 	dist.ChannelDistManager.Update(339, newTestChannel(collectionID, "channel1", 339))
 	dist.ChannelDistManager.Update(333, newTestChannel(collectionID, "channel2", 333))
-	dist.SegmentDistManager.Update(344,
-		newTestSegment(collectionID, 1, "channel1", 344),
-		newTestSegment(collectionID, 2, "channel1", 344),
-	)
-	dist.SegmentDistManager.Update(346,
-		newTestSegment(collectionID, 3, "channel2", 346),
-		newTestSegment(collectionID, 4, "channel2", 346),
-	)
+	dist.SegmentDistManager.Update(344, meta.SeedInto(dist, newTestSegment(collectionID, 1, "channel1", 344),
+		newTestSegment(collectionID, 2, "channel1", 344))...)
+	dist.SegmentDistManager.Update(346, meta.SeedInto(dist, newTestSegment(collectionID, 3, "channel2", 346),
+		newTestSegment(collectionID, 4, "channel2", 346))...)
 
 	segmentPlans, channelPlans := balancer.BalanceReplica(ctx, replica)
 
@@ -111,11 +107,9 @@ func TestChannelLevelScoreBalancer_StreamingTrueSegmentOutboundFirst(t *testing.
 	defer mockCanMove.UnPatch()
 
 	dist.ChannelDistManager.Update(339, newTestChannel(collectionID, "channel1", 339))
-	dist.SegmentDistManager.Update(339, newTestSegment(collectionID, 1, "channel1", 339))
-	dist.SegmentDistManager.Update(344,
-		newTestSegment(collectionID, 2, "channel1", 344),
-		newTestSegment(collectionID, 3, "channel1", 344),
-	)
+	dist.SegmentDistManager.Update(339, meta.SeedInto(dist, newTestSegment(collectionID, 1, "channel1", 339))...)
+	dist.SegmentDistManager.Update(344, meta.SeedInto(dist, newTestSegment(collectionID, 2, "channel1", 344),
+		newTestSegment(collectionID, 3, "channel1", 344))...)
 
 	segmentPlans, channelPlans := balancer.BalanceReplica(ctx, replica)
 
@@ -153,11 +147,9 @@ func TestChannelLevelScoreBalancer_StreamingEmptyOutboundPlanFallsBackToSegmentB
 	defer mockCanMove.UnPatch()
 
 	dist.ChannelDistManager.Update(339, newTestChannel(collectionID, "channel1", 339))
-	dist.SegmentDistManager.Update(339, newTestSegment(collectionID, 1, "channel1", 339))
-	dist.SegmentDistManager.Update(344,
-		newTestSegment(collectionID, 2, "channel1", 344),
-		newTestSegment(collectionID, 3, "channel1", 344),
-	)
+	dist.SegmentDistManager.Update(339, meta.SeedInto(dist, newTestSegment(collectionID, 1, "channel1", 339))...)
+	dist.SegmentDistManager.Update(344, meta.SeedInto(dist, newTestSegment(collectionID, 2, "channel1", 344),
+		newTestSegment(collectionID, 3, "channel1", 344))...)
 
 	segmentPlans, channelPlans := balancer.BalanceReplica(ctx, replica)
 
@@ -279,8 +271,8 @@ func newTestChannel(collectionID int64, channelName string, nodeID int64) *meta.
 	}
 }
 
-func newTestSegment(collectionID, segmentID int64, channelName string, nodeID int64) *meta.Segment {
-	return &meta.Segment{
+func newTestSegment(collectionID, segmentID int64, channelName string, nodeID int64) *meta.SegmentFixture {
+	return &meta.SegmentFixture{
 		SegmentInfo: &datapb.SegmentInfo{
 			ID:            segmentID,
 			CollectionID:  collectionID,

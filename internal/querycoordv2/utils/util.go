@@ -91,7 +91,7 @@ func CheckSegmentDataReady(ctx context.Context, collectionID int64, distManager 
 	// Check whether segments are fully loaded
 	segmentDist := targetMgr.GetSealedSegmentsByCollection(ctx, collectionID, scope)
 	distSegments := distManager.SegmentDistManager.GetByFilter(meta.WithCollectionID(collectionID))
-	distBySegmentID := make(map[int64][]*meta.Segment, len(distSegments))
+	distBySegmentID := make(map[int64][]*meta.LoadedSegment, len(distSegments))
 	for _, segment := range distSegments {
 		distBySegmentID[segment.GetID()] = append(distBySegmentID[segment.GetID()], segment)
 	}

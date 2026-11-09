@@ -46,7 +46,7 @@ var sealedDiffBenchEntries = []int{100000, 1000000}
 func sealedSegmentDiffBench(entries int) func(*testing.B) {
 	return func(b *testing.B) {
 		const collectionID, nodes = int64(1), 100
-		dist := make([]*meta.Segment, 0, entries)
+		dist := make([]*meta.LoadedSegment, 0, entries)
 		target := make(map[int64]*datapb.SegmentInfo, entries+entries/100)
 		ids := typeutil.NewUniqueSet()
 		for i := 0; i < entries+entries/100; i++ {
@@ -54,7 +54,7 @@ func sealedSegmentDiffBench(entries int) func(*testing.B) {
 			target[info.ID] = info
 			ids.Insert(info.ID)
 			if i < entries {
-				dist = append(dist, &meta.Segment{SegmentInfo: info, Node: int64(i%nodes) + 1, Version: int64(i)})
+				dist = append(dist, &meta.LoadedSegment{ID: info.ID, CollectionID: collectionID, Channel: "ch", Node: int64(i%nodes) + 1, Version: int64(i)})
 			}
 		}
 		targetMgr := meta.NewMockTargetManager(b)

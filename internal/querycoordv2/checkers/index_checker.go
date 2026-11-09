@@ -104,8 +104,8 @@ func (c *IndexChecker) checkReplica(ctx context.Context, collection *meta.Collec
 	segments := c.dist.SegmentDistManager.GetByFilter(meta.WithCollectionID(replica.GetCollectionID()), meta.WithReplica(replica))
 	roNodeSet := typeutil.NewUniqueSet(replica.GetRONodes()...)
 
-	segmentsToUpdate := make(map[int64]*meta.Segment)
-	segmentsStatsToUpdate := make(map[int64]*meta.Segment)
+	segmentsToUpdate := make(map[int64]*meta.LoadedSegment)
+	segmentsStatsToUpdate := make(map[int64]*meta.LoadedSegment)
 	for _, segment := range segments {
 		// skip update index in read only node
 		if roNodeSet.Contain(segment.Node) {
@@ -135,10 +135,10 @@ func (c *IndexChecker) checkReplica(ctx context.Context, collection *meta.Collec
 		}
 	}
 
-	tasks := lo.FilterMap(lo.Values(segmentsToUpdate), func(segment *meta.Segment, _ int) (task.Task, bool) {
+	tasks := lo.FilterMap(lo.Values(segmentsToUpdate), func(segment *meta.LoadedSegment, _ int) (task.Task, bool) {
 		return c.createSegmentUpdateTask(ctx, segment, replica)
 	})
-	tasksStats := lo.FilterMap(lo.Values(segmentsStatsToUpdate), func(segment *meta.Segment, _ int) (task.Task, bool) {
+	tasksStats := lo.FilterMap(lo.Values(segmentsStatsToUpdate), func(segment *meta.LoadedSegment, _ int) (task.Task, bool) {
 		return c.createSegmentStatsUpdateTask(ctx, segment, replica)
 	})
 	return append(tasks, tasksStats...)
@@ -149,7 +149,7 @@ func (c *IndexChecker) checkReplica(ctx context.Context, collection *meta.Collec
 // that can be loaded: finished, not deleted, and with index files (ready).
 // Only absent index IDs count: a reopen loads the index IDs a segment lacks,
 // so a newer build of a loaded index would load nothing.
-func (c *IndexChecker) checkSegment(view metacache.MetaView, segment *meta.Segment, indexInfos []*indexpb.IndexInfo) (missing, ready bool) {
+func (c *IndexChecker) checkSegment(view metacache.MetaView, segment *meta.LoadedSegment, indexInfos []*indexpb.IndexInfo) (missing, ready bool) {
 	for _, indexInfo := range indexInfos {
 		if _, ok := segment.IndexBuilds[indexInfo.GetIndexID()]; ok {
 			continue
@@ -164,7 +164,7 @@ func (c *IndexChecker) checkSegment(view metacache.MetaView, segment *meta.Segme
 }
 
 // checkRedundantIndices returns redundant indexIDs for each segment
-func (c *IndexChecker) checkRedundantIndices(segment *meta.Segment, indexInfos []*indexpb.IndexInfo) []int64 {
+func (c *IndexChecker) checkRedundantIndices(segment *meta.LoadedSegment, indexInfos []*indexpb.IndexInfo) []int64 {
 	var redundant []int64
 	indexInfoMap := typeutil.NewSet[int64]()
 
@@ -181,8 +181,9 @@ func (c *IndexChecker) checkRedundantIndices(segment *meta.Segment, indexInfos [
 	return redundant
 }
 
-func (c *IndexChecker) createSegmentUpdateTask(ctx context.Context, segment *meta.Segment, replica *meta.Replica) (task.Task, bool) {
-	action := task.NewSegmentActionWithScope(segment.Node, task.ActionTypeReopen, segment.GetInsertChannel(), segment.GetID(), querypb.DataScope_Historical, int(segment.GetNumOfRows()))
+func (c *IndexChecker) createSegmentUpdateTask(ctx context.Context, segment *meta.LoadedSegment, replica *meta.Replica) (task.Task, bool) {
+	stored, _ := c.meta.MetaView().GetSegment(segment.GetID())
+	action := task.NewSegmentActionWithScope(segment.Node, task.ActionTypeReopen, segment.GetInsertChannel(), segment.GetID(), querypb.DataScope_Historical, int(stored.GetNumOfRows()))
 	t, err := task.NewSegmentTask(
 		ctx,
 		params.Params.QueryCoordCfg.SegmentTaskTimeout.GetAsDuration(time.Millisecond),
@@ -207,7 +208,7 @@ func (c *IndexChecker) createSegmentUpdateTask(ctx context.Context, segment *met
 	return t, true
 }
 
-func (c *IndexChecker) checkSegmentStats(segment *meta.Segment, schema *schemapb.CollectionSchema, loadField []int64) (missFieldIDs []int64) {
+func (c *IndexChecker) checkSegmentStats(segment *meta.LoadedSegment, schema *schemapb.CollectionSchema, loadField []int64) (missFieldIDs []int64) {
 	var result []int64
 
 	if paramtable.Get().CommonCfg.EnabledJSONKeyStats.GetAsBool() {
@@ -236,8 +237,9 @@ func (c *IndexChecker) checkSegmentStats(segment *meta.Segment, schema *schemapb
 	return result
 }
 
-func (c *IndexChecker) createSegmentStatsUpdateTask(ctx context.Context, segment *meta.Segment, replica *meta.Replica) (task.Task, bool) {
-	action := task.NewSegmentActionWithScope(segment.Node, task.ActionTypeReopen, segment.GetInsertChannel(), segment.GetID(), querypb.DataScope_Historical, int(segment.GetNumOfRows()))
+func (c *IndexChecker) createSegmentStatsUpdateTask(ctx context.Context, segment *meta.LoadedSegment, replica *meta.Replica) (task.Task, bool) {
+	stored, _ := c.meta.MetaView().GetSegment(segment.GetID())
+	action := task.NewSegmentActionWithScope(segment.Node, task.ActionTypeReopen, segment.GetInsertChannel(), segment.GetID(), querypb.DataScope_Historical, int(stored.GetNumOfRows()))
 	t, err := task.NewSegmentTask(
 		ctx,
 		params.Params.QueryCoordCfg.SegmentTaskTimeout.GetAsDuration(time.Millisecond),

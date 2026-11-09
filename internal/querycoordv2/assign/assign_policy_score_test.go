@@ -54,14 +54,14 @@ func TestScoreBasedAssignPolicy_AssignSegment_BasicFunctionality(t *testing.T) {
 	policy := newScoreBasedAssignPolicy(nodeManager, mockScheduler, dist, metaMgr)
 
 	// Create test segments
-	segments := []*meta.Segment{
+	segments := []*meta.SegmentFixture{
 		{SegmentInfo: &datapb.SegmentInfo{ID: 1, NumOfRows: 1000, CollectionID: 100}},
 		{SegmentInfo: &datapb.SegmentInfo{ID: 2, NumOfRows: 2000, CollectionID: 100}},
 		{SegmentInfo: &datapb.SegmentInfo{ID: 3, NumOfRows: 1500, CollectionID: 100}},
 	}
 
 	nodes := []int64{1, 2, 3}
-	refs := SegmentRefsFromDist(segments)
+	refs := refsOf(segments)
 	plans := policy.AssignSegment(context.Background(), 100, refs, nodes, false)
 
 	assert.NotNil(t, plans)
@@ -96,24 +96,24 @@ func TestScoreBasedAssignPolicy_AssignSegment_PrefersLowScoreNode(t *testing.T) 
 	}
 
 	// Setup: node 1 has heavy load, node 3 has no load
-	dist.SegmentDistManager.Update(1, []*meta.Segment{
+	dist.SegmentDistManager.Update(1, meta.SeedInto(dist, []*meta.SegmentFixture{
 		{SegmentInfo: &datapb.SegmentInfo{ID: 100, NumOfRows: 50000, CollectionID: 100}},
 		{SegmentInfo: &datapb.SegmentInfo{ID: 101, NumOfRows: 50000, CollectionID: 100}},
-	}...)
+	}...)...)
 
-	dist.SegmentDistManager.Update(2, []*meta.Segment{
+	dist.SegmentDistManager.Update(2, meta.SeedInto(dist, []*meta.SegmentFixture{
 		{SegmentInfo: &datapb.SegmentInfo{ID: 102, NumOfRows: 10000, CollectionID: 100}},
-	}...)
+	}...)...)
 
 	policy := newScoreBasedAssignPolicy(nodeManager, mockScheduler, dist, metaMgr)
 
 	// Assign one segment
-	segments := []*meta.Segment{
+	segments := []*meta.SegmentFixture{
 		{SegmentInfo: &datapb.SegmentInfo{ID: 1, NumOfRows: 1000, CollectionID: 100}},
 	}
 
 	nodes := []int64{1, 2, 3}
-	plans := policy.AssignSegment(context.Background(), 100, SegmentRefsFromDist(segments), nodes, false)
+	plans := policy.AssignSegment(context.Background(), 100, refsOf(segments), nodes, false)
 
 	assert.NotNil(t, plans)
 	assert.Equal(t, 1, len(plans))
@@ -132,12 +132,12 @@ func TestScoreBasedAssignPolicy_AssignSegment_EmptyNodes(t *testing.T) {
 
 	policy := newScoreBasedAssignPolicy(nodeManager, mockScheduler, dist, metaMgr)
 
-	segments := []*meta.Segment{
+	segments := []*meta.SegmentFixture{
 		{SegmentInfo: &datapb.SegmentInfo{ID: 1, NumOfRows: 1000}},
 	}
 	nodes := []int64{}
 
-	plans := policy.AssignSegment(context.Background(), 100, SegmentRefsFromDist(segments), nodes, false)
+	plans := policy.AssignSegment(context.Background(), 100, refsOf(segments), nodes, false)
 
 	assert.Nil(t, plans)
 }
@@ -161,10 +161,10 @@ func TestScoreBasedAssignPolicy_AssignSegment_EmptySegments(t *testing.T) {
 
 	policy := newScoreBasedAssignPolicy(nodeManager, mockScheduler, dist, metaMgr)
 
-	segments := []*meta.Segment{}
+	segments := []*meta.SegmentFixture{}
 	nodes := []int64{1}
 
-	plans := policy.AssignSegment(context.Background(), 100, SegmentRefsFromDist(segments), nodes, false)
+	plans := policy.AssignSegment(context.Background(), 100, refsOf(segments), nodes, false)
 
 	assert.NotNil(t, plans)
 	assert.Equal(t, 0, len(plans))
@@ -190,17 +190,17 @@ func TestScoreBasedAssignPolicy_AssignSegment_ForceAssign(t *testing.T) {
 
 	policy := newScoreBasedAssignPolicy(nodeManager, mockScheduler, dist, metaMgr)
 
-	segments := []*meta.Segment{
+	segments := []*meta.SegmentFixture{
 		{SegmentInfo: &datapb.SegmentInfo{ID: 1, NumOfRows: 1000}},
 	}
 	nodes := []int64{1}
 
 	// Without force assign - should return nil (no normal nodes)
-	plans := policy.AssignSegment(context.Background(), 100, SegmentRefsFromDist(segments), nodes, false)
+	plans := policy.AssignSegment(context.Background(), 100, refsOf(segments), nodes, false)
 	assert.Nil(t, plans)
 
 	// With force assign - should proceed
-	plansForced := policy.AssignSegment(context.Background(), 100, SegmentRefsFromDist(segments), nodes, true)
+	plansForced := policy.AssignSegment(context.Background(), 100, refsOf(segments), nodes, true)
 	assert.NotNil(t, plansForced)
 	assert.Equal(t, 1, len(plansForced))
 	assert.Equal(t, int64(1), plansForced[0].To)
@@ -247,13 +247,13 @@ func TestScoreBasedAssignPolicy_ConvertToNodeItemsBySegment(t *testing.T) {
 	}
 
 	// Setup distribution
-	dist.SegmentDistManager.Update(1, []*meta.Segment{
+	dist.SegmentDistManager.Update(1, meta.SeedInto(dist, []*meta.SegmentFixture{
 		{SegmentInfo: &datapb.SegmentInfo{ID: 100, NumOfRows: 5000, CollectionID: 100}},
-	}...)
+	}...)...)
 
-	dist.SegmentDistManager.Update(2, []*meta.Segment{
+	dist.SegmentDistManager.Update(2, meta.SeedInto(dist, []*meta.SegmentFixture{
 		{SegmentInfo: &datapb.SegmentInfo{ID: 101, NumOfRows: 3000, CollectionID: 100}},
-	}...)
+	}...)...)
 
 	policy := newScoreBasedAssignPolicy(nodeManager, mockScheduler, dist, metaMgr)
 
@@ -283,16 +283,14 @@ func TestScoreBasedAssignPolicy_WorkloadStatusWithCollectionRows(t *testing.T) {
 	nodeManager.Get(1).UpdateStats(session.WithMemCapacity(100))
 	nodeManager.Get(1).SetState(session.NodeStateNormal)
 
-	dist.SegmentDistManager.Update(1,
-		&meta.Segment{
-			SegmentInfo: &datapb.SegmentInfo{ID: 1, CollectionID: 100, NumOfRows: 10},
-			Node:        1,
-		},
-		&meta.Segment{
+	dist.SegmentDistManager.Update(1, meta.SeedInto(dist, &meta.SegmentFixture{
+		SegmentInfo: &datapb.SegmentInfo{ID: 1, CollectionID: 100, NumOfRows: 10},
+		Node:        1,
+	},
+		&meta.SegmentFixture{
 			SegmentInfo: &datapb.SegmentInfo{ID: 2, CollectionID: 200, NumOfRows: 30},
 			Node:        1,
-		},
-	)
+		})...)
 	dist.ChannelDistManager.Update(1, &meta.DmChannel{
 		VchannelInfo: &datapb.VchannelInfo{CollectionID: 100, ChannelName: "ch-100"},
 		Node:         1,
@@ -635,7 +633,7 @@ func TestScoreBasedAssignPolicy_WorkloadStatusOnDemandUpdate(t *testing.T) {
 	assert.Equal(t, firstVersion, policy.version)
 
 	// 3. Update with segment meta change
-	dist.SegmentDistManager.Update(1, &meta.Segment{SegmentInfo: &datapb.SegmentInfo{ID: 100}, Node: 1})
+	dist.SegmentDistManager.Update(1, meta.SeedInto(dist, &meta.SegmentFixture{SegmentInfo: &datapb.SegmentInfo{ID: 100}, Node: 1})...)
 
 	// 4. Update again
 	thirdStatus := policy.getWorkloadStatus()

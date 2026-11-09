@@ -66,9 +66,9 @@ func FilterReleased[E interface{ GetCollectionID() int64 }](elems []E, collectio
 	return ret
 }
 
-func FindMaxVersionSegments(segments []*meta.Segment) []*meta.Segment {
+func FindMaxVersionSegments(segments []*meta.LoadedSegment) []*meta.LoadedSegment {
 	versions := make(map[int64]int64)
-	segMap := make(map[int64]*meta.Segment)
+	segMap := make(map[int64]*meta.LoadedSegment)
 	for _, s := range segments {
 		v, ok := versions[s.GetID()]
 		if !ok || v < s.Version {
@@ -76,7 +76,7 @@ func FindMaxVersionSegments(segments []*meta.Segment) []*meta.Segment {
 			segMap[s.GetID()] = s
 		}
 	}
-	ret := make([]*meta.Segment, 0)
+	ret := make([]*meta.LoadedSegment, 0)
 	for _, s := range segMap {
 		ret = append(ret, s)
 	}

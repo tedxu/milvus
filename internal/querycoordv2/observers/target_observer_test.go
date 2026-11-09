@@ -227,17 +227,16 @@ func (suite *TargetObserverSuite) TestIncrementalUpdate_WithNewSegment() {
 	}, 5*time.Second, 1*time.Second)
 
 	// Add initial segment distribution for CheckSegmentDataReady
-	suite.distMgr.SegmentDistManager.Update(2,
-		&meta.Segment{
-			SegmentInfo: &datapb.SegmentInfo{
-				ID:            11,
-				CollectionID:  suite.collectionID,
-				PartitionID:   suite.partitionID,
-				InsertChannel: "channel-1",
-			},
-			Node: 2,
+	suite.distMgr.SegmentDistManager.Update(2, meta.SeedInto(suite.distMgr, &meta.SegmentFixture{
+		SegmentInfo: &datapb.SegmentInfo{
+			ID:            11,
+			CollectionID:  suite.collectionID,
+			PartitionID:   suite.partitionID,
+			InsertChannel: "channel-1",
 		},
-		&meta.Segment{
+		Node: 2,
+	},
+		&meta.SegmentFixture{
 			SegmentInfo: &datapb.SegmentInfo{
 				ID:            12,
 				CollectionID:  suite.collectionID,
@@ -245,8 +244,7 @@ func (suite *TargetObserverSuite) TestIncrementalUpdate_WithNewSegment() {
 				InsertChannel: "channel-2",
 			},
 			Node: 2,
-		},
-	)
+		})...)
 
 	// Manually set CurrentTarget to non-empty (simulating previous successful load)
 	// This is the precondition for incremental updates to work
@@ -313,17 +311,16 @@ func (suite *TargetObserverSuite) TestIncrementalUpdate_WithNewSegment() {
 		},
 	})
 	// Add segments to SegmentDistManager for CheckSegmentDataReady
-	suite.distMgr.SegmentDistManager.Update(2,
-		&meta.Segment{
-			SegmentInfo: &datapb.SegmentInfo{
-				ID:            11,
-				CollectionID:  suite.collectionID,
-				PartitionID:   suite.partitionID,
-				InsertChannel: "channel-1",
-			},
-			Node: 2,
+	suite.distMgr.SegmentDistManager.Update(2, meta.SeedInto(suite.distMgr, &meta.SegmentFixture{
+		SegmentInfo: &datapb.SegmentInfo{
+			ID:            11,
+			CollectionID:  suite.collectionID,
+			PartitionID:   suite.partitionID,
+			InsertChannel: "channel-1",
 		},
-		&meta.Segment{
+		Node: 2,
+	},
+		&meta.SegmentFixture{
 			SegmentInfo: &datapb.SegmentInfo{
 				ID:            12,
 				CollectionID:  suite.collectionID,
@@ -332,7 +329,7 @@ func (suite *TargetObserverSuite) TestIncrementalUpdate_WithNewSegment() {
 			},
 			Node: 2,
 		},
-		&meta.Segment{
+		&meta.SegmentFixture{
 			SegmentInfo: &datapb.SegmentInfo{
 				ID:            13,
 				CollectionID:  suite.collectionID,
@@ -340,8 +337,7 @@ func (suite *TargetObserverSuite) TestIncrementalUpdate_WithNewSegment() {
 				InsertChannel: "channel-1",
 			},
 			Node: 2,
-		},
-	)
+		})...)
 
 	suite.cluster.EXPECT().SyncDistribution(mock.Anything, mock.Anything, mock.Anything).Return(merr.Success(), nil).Maybe()
 
@@ -713,14 +709,14 @@ func TestShouldUpdateCurrentTarget_OnlyReadyDelegatorsSynced(t *testing.T) {
 		},
 	})
 	// Add segment to SegmentDistManager for CheckSegmentDataReady
-	distMgr.SegmentDistManager.Update(1, &meta.Segment{
+	distMgr.SegmentDistManager.Update(1, meta.SeedInto(distMgr, &meta.SegmentFixture{
 		SegmentInfo: &datapb.SegmentInfo{
 			ID:            segmentID,
 			CollectionID:  collectionID,
 			InsertChannel: "channel-1",
 		},
 		Node: 1,
-	})
+	})...)
 
 	// Node 2: NOT READY delegator
 	// - Does NOT have the target segment loaded (missing segment 100)
@@ -870,24 +866,22 @@ func TestShouldUpdateCurrentTarget_AllChannelsSynced(t *testing.T) {
 		},
 	})
 	// Add segments to SegmentDistManager for CheckSegmentDataReady
-	distMgr.SegmentDistManager.Update(1,
-		&meta.Segment{
-			SegmentInfo: &datapb.SegmentInfo{
-				ID:            segmentID1,
-				CollectionID:  collectionID,
-				InsertChannel: "channel-1",
-			},
-			Node: 1,
+	distMgr.SegmentDistManager.Update(1, meta.SeedInto(distMgr, &meta.SegmentFixture{
+		SegmentInfo: &datapb.SegmentInfo{
+			ID:            segmentID1,
+			CollectionID:  collectionID,
+			InsertChannel: "channel-1",
 		},
-		&meta.Segment{
+		Node: 1,
+	},
+		&meta.SegmentFixture{
 			SegmentInfo: &datapb.SegmentInfo{
 				ID:            segmentID2,
 				CollectionID:  collectionID,
 				InsertChannel: "channel-2",
 			},
 			Node: 1,
-		},
-	)
+		})...)
 
 	// Execute the function under test
 	result := observer.shouldUpdateCurrentTarget(ctx, collectionID)

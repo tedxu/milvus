@@ -445,7 +445,7 @@ func (s *Server) initMeta() error {
 		return err
 	}
 
-	s.dist = meta.NewDistributionManager(s.nodeMgr)
+	s.dist = meta.NewDistributionManager(s.nodeMgr, meta.WithMetaView(s.metaView))
 	targetMgr := meta.NewTargetManager(s.broker, s.meta, s.metaView)
 	s.targetMgr = targetMgr
 	err = s.targetMgr.Recover(s.ctx, s.store)

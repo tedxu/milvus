@@ -51,26 +51,26 @@ func TestRowCountBasedAssignPolicy_AssignSegment_PriorityToLeastLoaded(t *testin
 	}
 
 	// Setup existing distribution: node 1 has most rows, node 3 has least
-	dist.SegmentDistManager.Update(1, []*meta.Segment{
+	dist.SegmentDistManager.Update(1, meta.SeedInto(dist, []*meta.SegmentFixture{
 		{SegmentInfo: &datapb.SegmentInfo{ID: 100, NumOfRows: 10000}},
 		{SegmentInfo: &datapb.SegmentInfo{ID: 101, NumOfRows: 10000}},
-	}...)
+	}...)...)
 
-	dist.SegmentDistManager.Update(2, []*meta.Segment{
+	dist.SegmentDistManager.Update(2, meta.SeedInto(dist, []*meta.SegmentFixture{
 		{SegmentInfo: &datapb.SegmentInfo{ID: 102, NumOfRows: 5000}},
-	}...)
+	}...)...)
 
 	// Node 3 has no segments (0 rows)
 
 	policy := newRowCountBasedAssignPolicy(nodeManager, mockScheduler, dist)
 
 	// Assign one new segment
-	segments := []*meta.Segment{
+	segments := []*meta.SegmentFixture{
 		{SegmentInfo: &datapb.SegmentInfo{ID: 1, NumOfRows: 1000}},
 	}
 
 	nodes := []int64{1, 2, 3}
-	plans := policy.AssignSegment(context.Background(), 100, SegmentRefsFromDist(segments), nodes, false)
+	plans := policy.AssignSegment(context.Background(), 100, refsOf(segments), nodes, false)
 
 	assert.NotNil(t, plans)
 	assert.Equal(t, 1, len(plans))
@@ -100,9 +100,9 @@ func TestRowCountBasedAssignPolicy_AssignSegment_MultipleSegments(t *testing.T) 
 	policy := newRowCountBasedAssignPolicy(nodeManager, mockScheduler, dist)
 
 	// Assign 4 segments of equal size
-	segments := make([]*meta.Segment, 4)
+	segments := make([]*meta.SegmentFixture, 4)
 	for i := 0; i < 4; i++ {
-		segments[i] = &meta.Segment{
+		segments[i] = &meta.SegmentFixture{
 			SegmentInfo: &datapb.SegmentInfo{
 				ID:        int64(i + 1),
 				NumOfRows: 1000,
@@ -111,7 +111,7 @@ func TestRowCountBasedAssignPolicy_AssignSegment_MultipleSegments(t *testing.T) 
 	}
 
 	nodes := []int64{1, 2}
-	plans := policy.AssignSegment(context.Background(), 100, SegmentRefsFromDist(segments), nodes, false)
+	plans := policy.AssignSegment(context.Background(), 100, refsOf(segments), nodes, false)
 
 	assert.NotNil(t, plans)
 	assert.Equal(t, 4, len(plans))
@@ -149,9 +149,9 @@ func TestRowCountBasedAssignPolicy_AssignSegment_BatchLimitOnlyForBalance(t *tes
 	}
 
 	policy := newRowCountBasedAssignPolicy(nodeManager, mockScheduler, dist)
-	segments := make([]*meta.Segment, 5)
+	segments := make([]*meta.SegmentFixture, 5)
 	for i := range segments {
-		segments[i] = &meta.Segment{
+		segments[i] = &meta.SegmentFixture{
 			SegmentInfo: &datapb.SegmentInfo{
 				ID:        int64(i + 1),
 				NumOfRows: 1000,
@@ -160,17 +160,17 @@ func TestRowCountBasedAssignPolicy_AssignSegment_BatchLimitOnlyForBalance(t *tes
 	}
 
 	nodes := []int64{1, 2}
-	balancePlans := policy.AssignSegment(context.Background(), 100, SegmentRefsFromDist(segments), nodes, false)
+	balancePlans := policy.AssignSegment(context.Background(), 100, refsOf(segments), nodes, false)
 	assert.Equal(t, 2, len(balancePlans))
 
 	for i := int64(1); i <= 2; i++ {
 		nodeManager.Get(i).SetState(session.NodeStateStopping)
 	}
 
-	balancePlans = policy.AssignSegment(context.Background(), 100, SegmentRefsFromDist(segments), nodes, false)
+	balancePlans = policy.AssignSegment(context.Background(), 100, refsOf(segments), nodes, false)
 	assert.Nil(t, balancePlans)
 
-	forcePlans := policy.AssignSegment(context.Background(), 100, SegmentRefsFromDist(segments), nodes, true)
+	forcePlans := policy.AssignSegment(context.Background(), 100, refsOf(segments), nodes, true)
 	assert.Equal(t, 5, len(forcePlans))
 }
 
@@ -181,12 +181,12 @@ func TestRowCountBasedAssignPolicy_AssignSegment_EmptyNodes(t *testing.T) {
 
 	policy := newRowCountBasedAssignPolicy(nodeManager, nil, dist)
 
-	segments := []*meta.Segment{
+	segments := []*meta.SegmentFixture{
 		{SegmentInfo: &datapb.SegmentInfo{ID: 1, NumOfRows: 1000}},
 	}
 	nodes := []int64{}
 
-	plans := policy.AssignSegment(context.Background(), 100, SegmentRefsFromDist(segments), nodes, false)
+	plans := policy.AssignSegment(context.Background(), 100, refsOf(segments), nodes, false)
 
 	assert.Nil(t, plans)
 }
@@ -211,13 +211,13 @@ func TestRowCountBasedAssignPolicy_AssignSegment_ConvertToNodeItems(t *testing.T
 	}
 
 	// Setup distribution
-	dist.SegmentDistManager.Update(1, []*meta.Segment{
+	dist.SegmentDistManager.Update(1, meta.SeedInto(dist, []*meta.SegmentFixture{
 		{SegmentInfo: &datapb.SegmentInfo{ID: 100, NumOfRows: 5000}},
-	}...)
+	}...)...)
 
-	dist.SegmentDistManager.Update(2, []*meta.Segment{
+	dist.SegmentDistManager.Update(2, meta.SeedInto(dist, []*meta.SegmentFixture{
 		{SegmentInfo: &datapb.SegmentInfo{ID: 101, NumOfRows: 3000}},
-	}...)
+	}...)...)
 
 	policy := newRowCountBasedAssignPolicy(nodeManager, mockScheduler, dist)
 
@@ -424,10 +424,10 @@ func TestRowCountBasedAssignPolicy_AssignSegment_EmptySegments(t *testing.T) {
 
 	policy := newRowCountBasedAssignPolicy(nodeManager, mockScheduler, dist)
 
-	segments := []*meta.Segment{}
+	segments := []*meta.SegmentFixture{}
 	nodes := []int64{1}
 
-	plans := policy.AssignSegment(context.Background(), 100, SegmentRefsFromDist(segments), nodes, false)
+	plans := policy.AssignSegment(context.Background(), 100, refsOf(segments), nodes, false)
 
 	assert.NotNil(t, plans)
 	assert.Equal(t, 0, len(plans))
@@ -482,7 +482,7 @@ func TestRowCountBasedAssignPolicy_WorkloadStatusOnDemandUpdate(t *testing.T) {
 	assert.Equal(t, firstVersion, policy.version)
 
 	// 3. Update with segment meta change
-	dist.SegmentDistManager.Update(1, &meta.Segment{SegmentInfo: &datapb.SegmentInfo{ID: 100}, Node: 1})
+	dist.SegmentDistManager.Update(1, meta.SeedInto(dist, &meta.SegmentFixture{SegmentInfo: &datapb.SegmentInfo{ID: 100}, Node: 1})...)
 
 	// 4. Update again
 	thirdStatus := policy.getWorkloadStatus()

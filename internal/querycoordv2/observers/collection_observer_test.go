@@ -346,7 +346,7 @@ func (suite *CollectionObserverSuite) TestObserve() {
 
 	// Add segment distribution for CheckSegmentDataReady
 	// Collection 100: segments 1, 2
-	suite.dist.SegmentDistManager.Update(1, &meta.Segment{
+	suite.dist.SegmentDistManager.Update(1, meta.SeedInto(suite.dist, &meta.SegmentFixture{
 		SegmentInfo: &datapb.SegmentInfo{
 			ID:            1,
 			CollectionID:  100,
@@ -354,8 +354,8 @@ func (suite *CollectionObserverSuite) TestObserve() {
 			InsertChannel: "100-dmc0",
 		},
 		Node: 1,
-	})
-	suite.dist.SegmentDistManager.Update(2, &meta.Segment{
+	})...)
+	suite.dist.SegmentDistManager.Update(2, meta.SeedInto(suite.dist, &meta.SegmentFixture{
 		SegmentInfo: &datapb.SegmentInfo{
 			ID:            2,
 			CollectionID:  100,
@@ -363,33 +363,33 @@ func (suite *CollectionObserverSuite) TestObserve() {
 			InsertChannel: "100-dmc1",
 		},
 		Node: 2,
-	})
+	})...)
 
 	// Collection 102: segments from 5 to 1003 (999 segments)
-	segments102 := make([]*meta.Segment, 0, len(suite.segments[102]))
+	segments102 := make([]*meta.SegmentFixture, 0, len(suite.segments[102]))
 	for _, seg := range suite.segments[102] {
-		segments102 = append(segments102, &meta.Segment{
+		segments102 = append(segments102, &meta.SegmentFixture{
 			SegmentInfo: seg,
 			Node:        3,
 		})
 	}
-	suite.dist.SegmentDistManager.Update(3, segments102...)
+	suite.dist.SegmentDistManager.Update(3, meta.SeedInto(suite.dist, segments102...)...)
 
 	// Collection 103: segments from 2000 to 2009 (10 segments), distributed on node 2 and 3
-	segments103Node2 := make([]*meta.Segment, 0, len(suite.segments[103]))
-	segments103Node3 := make([]*meta.Segment, 0, len(suite.segments[103]))
+	segments103Node2 := make([]*meta.SegmentFixture, 0, len(suite.segments[103]))
+	segments103Node3 := make([]*meta.SegmentFixture, 0, len(suite.segments[103]))
 	for _, seg := range suite.segments[103] {
-		segments103Node2 = append(segments103Node2, &meta.Segment{
+		segments103Node2 = append(segments103Node2, &meta.SegmentFixture{
 			SegmentInfo: seg,
 			Node:        2,
 		})
-		segments103Node3 = append(segments103Node3, &meta.Segment{
+		segments103Node3 = append(segments103Node3, &meta.SegmentFixture{
 			SegmentInfo: seg,
 			Node:        3,
 		})
 	}
-	suite.dist.SegmentDistManager.Update(2, segments103Node2...)
-	suite.dist.SegmentDistManager.Update(3, segments103Node3...)
+	suite.dist.SegmentDistManager.Update(2, meta.SeedInto(suite.dist, segments103Node2...)...)
+	suite.dist.SegmentDistManager.Update(3, meta.SeedInto(suite.dist, segments103Node3...)...)
 
 	for _, collection := range suite.collections {
 		suite.metaStore.PutCollection(&metacache.CollectionInfo{ID: collection})
@@ -462,7 +462,7 @@ func (suite *CollectionObserverSuite) TestObservePartition() {
 
 	// Add segment distribution for CheckSegmentDataReady
 	// Collection 100, partition 10: segments 1, 2
-	suite.dist.SegmentDistManager.Update(1, &meta.Segment{
+	suite.dist.SegmentDistManager.Update(1, meta.SeedInto(suite.dist, &meta.SegmentFixture{
 		SegmentInfo: &datapb.SegmentInfo{
 			ID:            1,
 			CollectionID:  100,
@@ -470,8 +470,8 @@ func (suite *CollectionObserverSuite) TestObservePartition() {
 			InsertChannel: "100-dmc0",
 		},
 		Node: 1,
-	})
-	suite.dist.SegmentDistManager.Update(2, &meta.Segment{
+	})...)
+	suite.dist.SegmentDistManager.Update(2, meta.SeedInto(suite.dist, &meta.SegmentFixture{
 		SegmentInfo: &datapb.SegmentInfo{
 			ID:            2,
 			CollectionID:  100,
@@ -479,7 +479,7 @@ func (suite *CollectionObserverSuite) TestObservePartition() {
 			InsertChannel: "100-dmc1",
 		},
 		Node: 2,
-	})
+	})...)
 
 	suite.Eventually(func() bool {
 		return suite.isPartitionLoaded(suite.partitions[100][0])

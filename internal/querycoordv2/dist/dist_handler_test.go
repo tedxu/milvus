@@ -68,7 +68,7 @@ func (suite *DistHandlerSuite) SetupSuite() {
 	suite.client = session.NewMockCluster(suite.T())
 	suite.nodeManager = session.NewNodeManager()
 	suite.scheduler = task.NewMockScheduler(suite.T())
-	suite.dist = meta.NewDistributionManager(suite.nodeManager)
+	suite.dist = meta.NewDistributionManager(suite.nodeManager, meta.WithMetaView(metacache.NewMetaStore(nil)))
 
 	suite.target = meta.NewMockTargetManager(suite.T())
 	suite.ctx = context.Background()
@@ -209,7 +209,7 @@ func TestUnserviceableDelegatorDistributionPullFallback(t *testing.T) {
 			handler := &distHandler{
 				nodeID:       nodeID,
 				nodeManager:  nodeManager,
-				dist:         meta.NewDistributionManager(nodeManager),
+				dist:         meta.NewDistributionManager(nodeManager, meta.WithMetaView(metacache.NewMetaStore(nil))),
 				target:       target,
 				lastUpdateTs: 99,
 			}
@@ -343,7 +343,7 @@ func TestHeartbeatMetricsRecording(t *testing.T) {
 	handler := &distHandler{
 		nodeID:      nodeID,
 		nodeManager: nodeManager,
-		dist:        meta.NewDistributionManager(nodeManager),
+		dist:        meta.NewDistributionManager(nodeManager, meta.WithMetaView(metacache.NewMetaStore(nil))),
 		target:      meta.NewTargetManager(nil, nil, metacache.NewMetaStore(nil)),
 		scheduler:   task.NewScheduler(ctx, nil, nil, nil, nil, nil, nil),
 	}
@@ -375,7 +375,7 @@ func TestDeltaDistributionPatch(t *testing.T) {
 	target.EXPECT().GetSealedSegment(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 	target.EXPECT().GetDmChannel(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 	target.EXPECT().GetCollectionTargetVersion(mock.Anything, mock.Anything, mock.Anything).Return(int64(101)).Maybe()
-	dist := meta.NewDistributionManager(nodeManager)
+	dist := meta.NewDistributionManager(nodeManager, meta.WithMetaView(metacache.NewMetaStore(nil)))
 	handler := &distHandler{
 		nodeID:      nodeID,
 		nodeManager: nodeManager,
@@ -547,7 +547,7 @@ func TestDeltaDistributionPatchNotifiesNewServiceableChannel(t *testing.T) {
 	}))
 	target := meta.NewMockTargetManager(t)
 	target.EXPECT().GetDmChannel(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
-	dist := meta.NewDistributionManager(nodeManager)
+	dist := meta.NewDistributionManager(nodeManager, meta.WithMetaView(metacache.NewMetaStore(nil)))
 	handler := &distHandler{
 		nodeID:      nodeID,
 		nodeManager: nodeManager,
@@ -615,7 +615,7 @@ func TestDeltaDistributionPatchNotifiesRemovedChannel(t *testing.T) {
 	}))
 	target := meta.NewMockTargetManager(t)
 	target.EXPECT().GetDmChannel(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
-	dist := meta.NewDistributionManager(nodeManager)
+	dist := meta.NewDistributionManager(nodeManager, meta.WithMetaView(metacache.NewMetaStore(nil)))
 	handler := &distHandler{
 		nodeID:      nodeID,
 		nodeManager: nodeManager,
@@ -726,85 +726,76 @@ func TestDispatchLoopUsesDispatchInterval(t *testing.T) {
 	<-done
 }
 
-func TestDistributionDoesNotRetainStoreProtos(t *testing.T) {
-	ctx := context.Background()
+func newIngestTestHandler(t *testing.T, store metacache.MetaStore) (*distHandler, int64) {
 	nodeID := time.Now().UnixNano() % 1000000
-
-	// What the shared metacache store hands back: the live DataCoord proto,
-	// binlog/statslog arrays included.
-	stored := &datapb.SegmentInfo{
-		ID:                  7,
-		CollectionID:        1,
-		PartitionID:         2,
-		InsertChannel:       "test-channel-1",
-		NumOfRows:           1024,
-		Level:               datapb.SegmentLevel_L1,
-		IsSorted:            true,
-		IsSortedByNamespace: true,
-		ManifestPath:        "manifest-7",
-		DataVersion:         3,
-		Binlogs:             []*datapb.FieldBinlog{{FieldID: 100, Binlogs: []*datapb.Binlog{{LogPath: "insert_log/1/2/7/100/1"}}}},
-		Statslogs:           []*datapb.FieldBinlog{{FieldID: 100}},
-		Deltalogs:           []*datapb.FieldBinlog{{FieldID: 100}},
-		Bm25Statslogs:       []*datapb.FieldBinlog{{FieldID: 100}},
-		TextStatsLogs:       map[int64]*datapb.TextIndexStats{100: {FieldID: 100}},
-		JsonKeyStats:        map[int64]*datapb.JsonKeyStats{100: {FieldID: 100}},
-	}
-
-	targetMgr := meta.NewMockTargetManager(t)
-	targetMgr.EXPECT().GetSealedSegment(mock.Anything, int64(1), int64(7), mock.Anything).Return(stored)
-
 	nodeManager := session.NewNodeManager()
-	nodeManager.Add(session.NewNodeInfo(session.ImmutableNodeInfo{
-		NodeID:   nodeID,
-		Address:  "localhost:19530",
-		Hostname: "localhost",
-	}))
-	handler := &distHandler{
+	return &distHandler{
 		nodeID:      nodeID,
 		nodeManager: nodeManager,
-		dist:        meta.NewDistributionManager(nodeManager),
-		target:      targetMgr,
-	}
+		dist:        meta.NewDistributionManager(nodeManager, meta.WithMetaView(store)),
+		target:      meta.NewMockTargetManager(t),
+	}, nodeID
+}
 
-	handler.updateSegmentsDistribution(ctx, &querypb.GetDataDistributionResponse{
-		Status: merr.Success(),
-		NodeID: nodeID,
-		Segments: []*querypb.SegmentVersionInfo{
-			{ID: 7, Collection: 1, Partition: 2, Channel: "test-channel-1", Version: 1},
-		},
+// TestDistHandlerIdentityFromStore pins that a record's identity keys come
+// from the store when it has the segment.
+func TestDistHandlerIdentityFromStore(t *testing.T) {
+	store := metacache.NewMetaStore(nil)
+	store.PutSegment(&datapb.SegmentInfo{ID: 7, CollectionID: 1, PartitionID: 2, InsertChannel: "b"})
+	handler, nodeID := newIngestTestHandler(t, store)
+
+	handler.updateSegmentsDistribution(context.Background(), &querypb.GetDataDistributionResponse{
+		Status:   merr.Success(),
+		NodeID:   nodeID,
+		Segments: []*querypb.SegmentVersionInfo{{ID: 7, Collection: 1, Partition: 2, Channel: "a", Version: 1}},
 	})
 
 	segments := handler.dist.SegmentDistManager.GetByFilter(meta.WithNodeID(nodeID))
 	require.Len(t, segments, 1)
-	got := segments[0].SegmentInfo
-
-	// The distribution must not pin the store's proto: DataCoord replaces it
-	// wholesale on every mutation, and unchanged node distributions are not
-	// refreshed, so the old object would stay alive per node.
-	assert.NotSame(t, stored, got)
-	assert.Empty(t, got.GetBinlogs())
-	assert.Empty(t, got.GetStatslogs())
-	assert.Empty(t, got.GetDeltalogs())
-	assert.Empty(t, got.GetBm25Statslogs())
-	assert.Empty(t, got.GetTextStatsLogs())
-	assert.Empty(t, got.GetJsonKeyStats())
-
-	// Everything the distribution consumers read still survives the projection.
-	assert.Equal(t, stored.GetID(), got.GetID())
-	assert.Equal(t, stored.GetCollectionID(), got.GetCollectionID())
-	assert.Equal(t, stored.GetPartitionID(), got.GetPartitionID())
-	assert.Equal(t, stored.GetInsertChannel(), got.GetInsertChannel())
-	assert.Equal(t, stored.GetNumOfRows(), got.GetNumOfRows())
-	assert.Equal(t, stored.GetLevel(), got.GetLevel())
-	assert.Equal(t, stored.GetIsSorted(), got.GetIsSorted())
-	assert.Equal(t, stored.GetIsSortedByNamespace(), got.GetIsSortedByNamespace())
-	assert.Equal(t, stored.GetManifestPath(), got.GetManifestPath())
-	assert.Equal(t, stored.GetDataVersion(), got.GetDataVersion())
+	assert.Equal(t, int64(1), segments[0].CollectionID)
+	assert.Equal(t, "b", segments[0].Channel)
 }
 
-func TestDistHandlerSuite(t *testing.T) {
-	suite.Run(t, new(DistHandlerSuite))
+// TestDistHandlerIdentityFallback pins that a segment the store does not
+// have keeps the report's collection and channel.
+func TestDistHandlerIdentityFallback(t *testing.T) {
+	handler, nodeID := newIngestTestHandler(t, metacache.NewMetaStore(nil))
+
+	handler.updateSegmentsDistribution(context.Background(), &querypb.GetDataDistributionResponse{
+		Status:   merr.Success(),
+		NodeID:   nodeID,
+		Segments: []*querypb.SegmentVersionInfo{{ID: 7, Collection: 1, Partition: 2, Channel: "a", Version: 1}},
+	})
+
+	segments := handler.dist.SegmentDistManager.GetByFilter(meta.WithNodeID(nodeID))
+	require.Len(t, segments, 1)
+	assert.Equal(t, int64(1), segments[0].CollectionID)
+	assert.Equal(t, "a", segments[0].Channel)
+}
+
+// TestDistHandlerNoProjection pins that the record keeps what the node
+// reports as reported, and copies nothing else (it has no proto field).
+func TestDistHandlerNoProjection(t *testing.T) {
+	store := metacache.NewMetaStore(nil)
+	store.PutSegment(&datapb.SegmentInfo{ID: 7, CollectionID: 1, InsertChannel: "a", ManifestPath: "store-manifest", DataVersion: 9})
+	handler, nodeID := newIngestTestHandler(t, store)
+	dataVersion := int32(3)
+
+	handler.updateSegmentsDistribution(context.Background(), &querypb.GetDataDistributionResponse{
+		Status: merr.Success(),
+		NodeID: nodeID,
+		Segments: []*querypb.SegmentVersionInfo{{
+			ID: 7, Collection: 1, Channel: "a", Version: 5, LastDeltaTimestamp: 11,
+			ManifestPath: "loaded-manifest", DataVersion: &dataVersion,
+		}},
+	})
+
+	segments := handler.dist.SegmentDistManager.GetByFilter(meta.WithNodeID(nodeID))
+	require.Len(t, segments, 1)
+	assert.Equal(t, &meta.LoadedSegment{
+		ID: 7, CollectionID: 1, Channel: "a", Node: nodeID, Version: 5, LastDeltaTimestamp: 11,
+		ManifestPath: "loaded-manifest", DataVersion: &dataVersion,
+	}, segments[0])
 }
 
 func TestDistHandlerTrimsIndexInfo(t *testing.T) {
@@ -812,12 +803,11 @@ func TestDistHandlerTrimsIndexInfo(t *testing.T) {
 	nodeID := time.Now().UnixNano() % 1000000
 
 	targetMgr := meta.NewMockTargetManager(t)
-	targetMgr.EXPECT().GetSealedSegment(mock.Anything, int64(1), int64(7), mock.Anything).Return(nil)
 	nodeManager := session.NewNodeManager()
 	handler := &distHandler{
 		nodeID:      nodeID,
 		nodeManager: nodeManager,
-		dist:        meta.NewDistributionManager(nodeManager),
+		dist:        meta.NewDistributionManager(nodeManager, meta.WithMetaView(metacache.NewMetaStore(nil))),
 		target:      targetMgr,
 	}
 
@@ -850,7 +840,7 @@ func TestDistHandlerGrowingPositions(t *testing.T) {
 	handler := &distHandler{
 		nodeID:      nodeID,
 		nodeManager: nodeManager,
-		dist:        meta.NewDistributionManager(nodeManager),
+		dist:        meta.NewDistributionManager(nodeManager, meta.WithMetaView(metacache.NewMetaStore(nil))),
 		target:      targetMgr,
 	}
 

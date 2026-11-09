@@ -76,7 +76,7 @@ func (suite *BalanceTestSuite) TestAssignBalance() {
 		nodeIDs     []int64
 		segmentCnts []int
 		states      []session.State
-		assignments []*meta.Segment
+		assignments []*meta.SegmentFixture
 		expectPlans []assign.SegmentAssignPlan
 	}{
 		{
@@ -84,7 +84,7 @@ func (suite *BalanceTestSuite) TestAssignBalance() {
 			nodeIDs:     []int64{1, 2, 3},
 			states:      []session.State{session.NodeStateNormal, session.NodeStateNormal, session.NodeStateStopping},
 			segmentCnts: []int{100, 200, 0},
-			assignments: []*meta.Segment{
+			assignments: []*meta.SegmentFixture{
 				{SegmentInfo: &datapb.SegmentInfo{ID: 1}},
 				{SegmentInfo: &datapb.SegmentInfo{ID: 2}},
 				{SegmentInfo: &datapb.SegmentInfo{ID: 3}},
@@ -100,7 +100,7 @@ func (suite *BalanceTestSuite) TestAssignBalance() {
 			nodeIDs:     []int64{},
 			segmentCnts: []int{},
 			states:      []session.State{},
-			assignments: []*meta.Segment{
+			assignments: []*meta.SegmentFixture{
 				{SegmentInfo: &datapb.SegmentInfo{ID: 1}},
 				{SegmentInfo: &datapb.SegmentInfo{ID: 2}},
 				{SegmentInfo: &datapb.SegmentInfo{ID: 3}},
@@ -127,7 +127,7 @@ func (suite *BalanceTestSuite) TestAssignBalance() {
 				nodeInfo.SetState(c.states[i])
 				suite.roundRobinBalancer.nodeManager.Add(nodeInfo)
 			}
-			plans := suite.roundRobinBalancer.GetAssignPolicy().AssignSegment(ctx, 0, assign.SegmentRefsFromDist(c.assignments), c.nodeIDs, false)
+			plans := suite.roundRobinBalancer.GetAssignPolicy().AssignSegment(ctx, 0, fixtureRefs(c.assignments), c.nodeIDs, false)
 			suite.ElementsMatch(c.expectPlans, plans)
 		})
 	}
@@ -244,12 +244,12 @@ func (suite *BalanceTestSuite) TestBalanceReplica_BalanceSegments() {
 	}
 
 	// Create segments distribution - node 1 has 3 segments, node 2 has 0 segments
-	segments1 := []*meta.Segment{
+	segments1 := []*meta.SegmentFixture{
 		{SegmentInfo: &datapb.SegmentInfo{ID: 1, CollectionID: 1, NumOfRows: 100}, Node: 1},
 		{SegmentInfo: &datapb.SegmentInfo{ID: 2, CollectionID: 1, NumOfRows: 200}, Node: 1},
 		{SegmentInfo: &datapb.SegmentInfo{ID: 3, CollectionID: 1, NumOfRows: 300}, Node: 1},
 	}
-	suite.dist.SegmentDistManager.Update(1, segments1...)
+	suite.dist.SegmentDistManager.Update(1, meta.SeedInto(suite.dist, segments1...)...)
 	suite.dist.SegmentDistManager.Update(2)
 
 	// Create replica with 2 nodes
@@ -344,16 +344,16 @@ func (suite *BalanceTestSuite) TestBalanceReplica_AlreadyBalanced() {
 	}
 
 	// Create balanced segments distribution - node 1 has 2 segments, node 2 has 2 segments
-	segments1 := []*meta.Segment{
+	segments1 := []*meta.SegmentFixture{
 		{SegmentInfo: &datapb.SegmentInfo{ID: 1, CollectionID: 1, NumOfRows: 100}, Node: 1},
 		{SegmentInfo: &datapb.SegmentInfo{ID: 2, CollectionID: 1, NumOfRows: 200}, Node: 1},
 	}
-	segments2 := []*meta.Segment{
+	segments2 := []*meta.SegmentFixture{
 		{SegmentInfo: &datapb.SegmentInfo{ID: 3, CollectionID: 1, NumOfRows: 300}, Node: 2},
 		{SegmentInfo: &datapb.SegmentInfo{ID: 4, CollectionID: 1, NumOfRows: 400}, Node: 2},
 	}
-	suite.dist.SegmentDistManager.Update(1, segments1...)
-	suite.dist.SegmentDistManager.Update(2, segments2...)
+	suite.dist.SegmentDistManager.Update(1, meta.SeedInto(suite.dist, segments1...)...)
+	suite.dist.SegmentDistManager.Update(2, meta.SeedInto(suite.dist, segments2...)...)
 
 	// Create replica with 2 nodes
 	replica := meta.NewReplica(
@@ -432,16 +432,16 @@ func (suite *BalanceTestSuite) TestBalanceReplica_SkipRedundantSegments() {
 	}
 
 	// Create redundant segment distribution - same segment on both nodes
-	segments1 := []*meta.Segment{
+	segments1 := []*meta.SegmentFixture{
 		{SegmentInfo: &datapb.SegmentInfo{ID: 1, CollectionID: 1, NumOfRows: 100}, Node: 1},
 		{SegmentInfo: &datapb.SegmentInfo{ID: 2, CollectionID: 1, NumOfRows: 200}, Node: 1},
 		{SegmentInfo: &datapb.SegmentInfo{ID: 3, CollectionID: 1, NumOfRows: 300}, Node: 1},
 	}
-	segments2 := []*meta.Segment{
+	segments2 := []*meta.SegmentFixture{
 		{SegmentInfo: &datapb.SegmentInfo{ID: 1, CollectionID: 1, NumOfRows: 100}, Node: 2}, // Redundant segment
 	}
-	suite.dist.SegmentDistManager.Update(1, segments1...)
-	suite.dist.SegmentDistManager.Update(2, segments2...)
+	suite.dist.SegmentDistManager.Update(1, meta.SeedInto(suite.dist, segments1...)...)
+	suite.dist.SegmentDistManager.Update(2, meta.SeedInto(suite.dist, segments2...)...)
 
 	// Create replica with 2 nodes
 	replica := meta.NewReplica(
@@ -468,4 +468,13 @@ func (suite *BalanceTestSuite) TestBalanceReplica_SkipRedundantSegments() {
 
 func TestBalanceSuite(t *testing.T) {
 	suite.Run(t, new(BalanceTestSuite))
+}
+
+// fixtureRefs builds the refs that fixtures resolve to.
+func fixtureRefs(fixtures []*meta.SegmentFixture) []assign.SegmentRef {
+	refs := make([]assign.SegmentRef, 0, len(fixtures))
+	for _, f := range fixtures {
+		refs = append(refs, assign.SegmentRefFromInfo(f.SegmentInfo, f.Node))
+	}
+	return refs
 }

@@ -938,8 +938,8 @@ func TestGetLeakedResourcesByCollection(t *testing.T) {
 		mocker := mockey.Mock((*meta.ReplicaManager).GetByCollection).Return([]*meta.Replica{replica}).Build()
 		defer mocker.UnPatch()
 
-		s.dist.SegmentDistManager.Update(10, meta.SegmentFromInfo(&datapb.SegmentInfo{ID: 1, CollectionID: collectionID}))
-		s.dist.SegmentDistManager.Update(11, meta.SegmentFromInfo(&datapb.SegmentInfo{ID: 2, CollectionID: collectionID}))
+		s.dist.SegmentDistManager.Update(10, meta.SeedInto(s.dist, meta.FixtureFromInfo(&datapb.SegmentInfo{ID: 1, CollectionID: collectionID}))...)
+		s.dist.SegmentDistManager.Update(11, meta.SeedInto(s.dist, meta.FixtureFromInfo(&datapb.SegmentInfo{ID: 2, CollectionID: collectionID}))...)
 
 		leakedSeg, leakedCh := s.GetLeakedResourcesByCollection(context.Background(), collectionID)
 		assert.Equal(t, 0, leakedSeg)
@@ -952,11 +952,11 @@ func TestGetLeakedResourcesByCollection(t *testing.T) {
 		defer mocker.UnPatch()
 
 		// Node 10 is in replica → not leaked
-		s.dist.SegmentDistManager.Update(10, meta.SegmentFromInfo(&datapb.SegmentInfo{ID: 1, CollectionID: collectionID}))
+		s.dist.SegmentDistManager.Update(10, meta.SeedInto(s.dist, meta.FixtureFromInfo(&datapb.SegmentInfo{ID: 1, CollectionID: collectionID}))...)
 		// Nodes 99, 98 are NOT in replica → leaked (these are querynodes pending release during scale-down)
-		s.dist.SegmentDistManager.Update(99, meta.SegmentFromInfo(&datapb.SegmentInfo{ID: 2, CollectionID: collectionID}),
-			meta.SegmentFromInfo(&datapb.SegmentInfo{ID: 3, CollectionID: collectionID}))
-		s.dist.SegmentDistManager.Update(98, meta.SegmentFromInfo(&datapb.SegmentInfo{ID: 4, CollectionID: collectionID}))
+		s.dist.SegmentDistManager.Update(99, meta.SeedInto(s.dist, meta.FixtureFromInfo(&datapb.SegmentInfo{ID: 2, CollectionID: collectionID}),
+			meta.FixtureFromInfo(&datapb.SegmentInfo{ID: 3, CollectionID: collectionID}))...)
+		s.dist.SegmentDistManager.Update(98, meta.SeedInto(s.dist, meta.FixtureFromInfo(&datapb.SegmentInfo{ID: 4, CollectionID: collectionID}))...)
 
 		leakedSeg, leakedCh := s.GetLeakedResourcesByCollection(context.Background(), collectionID)
 		assert.Equal(t, 3, leakedSeg)
@@ -982,7 +982,7 @@ func TestGetLeakedResourcesByCollection(t *testing.T) {
 		defer mocker.UnPatch()
 
 		// Segment on non-replica node 99 but belongs to different collection
-		s.dist.SegmentDistManager.Update(99, meta.SegmentFromInfo(&datapb.SegmentInfo{ID: 1, CollectionID: 200}))
+		s.dist.SegmentDistManager.Update(99, meta.SeedInto(s.dist, meta.FixtureFromInfo(&datapb.SegmentInfo{ID: 1, CollectionID: 200}))...)
 
 		leakedSeg, leakedCh := s.GetLeakedResourcesByCollection(context.Background(), collectionID)
 		assert.Equal(t, 0, leakedSeg)
@@ -1212,9 +1212,9 @@ func TestGetLeakedResourcesByCollectionPerRG(t *testing.T) {
 		defer mockerRG.UnPatch()
 
 		// Node 10 is in replica -> not leaked. Nodes 99 (rg2, 2 segments) and 98 (rg3, 1 channel) are leaked.
-		s.dist.SegmentDistManager.Update(10, meta.SegmentFromInfo(&datapb.SegmentInfo{ID: 1, CollectionID: collectionID}))
-		s.dist.SegmentDistManager.Update(99, meta.SegmentFromInfo(&datapb.SegmentInfo{ID: 2, CollectionID: collectionID}),
-			meta.SegmentFromInfo(&datapb.SegmentInfo{ID: 3, CollectionID: collectionID}))
+		s.dist.SegmentDistManager.Update(10, meta.SeedInto(s.dist, meta.FixtureFromInfo(&datapb.SegmentInfo{ID: 1, CollectionID: collectionID}))...)
+		s.dist.SegmentDistManager.Update(99, meta.SeedInto(s.dist, meta.FixtureFromInfo(&datapb.SegmentInfo{ID: 2, CollectionID: collectionID}),
+			meta.FixtureFromInfo(&datapb.SegmentInfo{ID: 3, CollectionID: collectionID}))...)
 		s.dist.ChannelDistManager.Update(98, meta.DmChannelFromVChannel(&datapb.VchannelInfo{CollectionID: collectionID, ChannelName: "c1"}))
 
 		// ResourceManager remains authoritative when both mappings contain a node.
@@ -1229,7 +1229,7 @@ func TestGetLeakedResourcesByCollectionPerRG(t *testing.T) {
 		mockerRG := mockey.Mock((*meta.ResourceManager).GetResourceGroupByNodeID).Return("").Build()
 		defer mockerRG.UnPatch()
 
-		s.dist.SegmentDistManager.Update(99, meta.SegmentFromInfo(&datapb.SegmentInfo{ID: 1, CollectionID: collectionID}))
+		s.dist.SegmentDistManager.Update(99, meta.SeedInto(s.dist, meta.FixtureFromInfo(&datapb.SegmentInfo{ID: 1, CollectionID: collectionID}))...)
 
 		leaked := s.GetLeakedResourcesByCollectionPerRG(context.Background(), collectionID, nil)
 		assert.Equal(t, map[string]int{"": 1}, leaked)

@@ -29,13 +29,34 @@ import (
 type DistributionManager struct {
 	SegmentDistManager SegmentDistManagerInterface
 	ChannelDistManager ChannelDistManagerInterface
+
+	view metacache.MetaView
 }
 
-func NewDistributionManager(nodeManager *session.NodeManager) *DistributionManager {
-	return &DistributionManager{
+// DistributionOption configures a DistributionManager.
+type DistributionOption func(*DistributionManager)
+
+// WithMetaView sets the store that distribution entries are resolved in.
+func WithMetaView(view metacache.MetaView) DistributionOption {
+	return func(dm *DistributionManager) { dm.view = view }
+}
+
+func NewDistributionManager(nodeManager *session.NodeManager, opts ...DistributionOption) *DistributionManager {
+	dm := &DistributionManager{
 		SegmentDistManager: NewSegmentDistManager(),
 		ChannelDistManager: NewChannelDistManager(nodeManager),
 	}
+	for _, opt := range opts {
+		opt(dm)
+	}
+	return dm
+}
+
+// MetaView returns the store that distribution entries are resolved in:
+// every segment field other than the node-reported ones is read there by
+// segment ID.
+func (dm *DistributionManager) MetaView() metacache.MetaView {
+	return dm.view
 }
 
 // GetDistributionJSON returns a JSON representation of the current distribution state.

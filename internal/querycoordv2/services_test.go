@@ -1923,7 +1923,7 @@ func (suite *ServiceSuite) getAllSegments(collection int64) []int64 {
 
 func (suite *ServiceSuite) updateSegmentDist(collection, node int64, partitions ...int64) {
 	partitionSet := typeutil.NewSet(partitions...)
-	metaSegments := make([]*meta.Segment, 0)
+	metaSegments := make([]*meta.SegmentFixture, 0)
 	for partition, segments := range suite.segments[collection] {
 		if partitionSet.Len() > 0 && !partitionSet.Contain(partition) {
 			continue
@@ -1933,7 +1933,7 @@ func (suite *ServiceSuite) updateSegmentDist(collection, node int64, partitions 
 				utils.CreateTestSegment(collection, partition, segment, node, 1, "test-channel"))
 		}
 	}
-	suite.dist.SegmentDistManager.Update(node, metaSegments...)
+	suite.dist.SegmentDistManager.Update(node, meta.SeedInto(suite.dist, metaSegments...)...)
 }
 
 func (suite *ServiceSuite) updateChannelDist(ctx context.Context, collection int64) {

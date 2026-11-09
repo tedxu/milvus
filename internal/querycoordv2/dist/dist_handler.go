@@ -199,34 +199,6 @@ func (dh *distHandler) SetNotifyFunc(notifyFunc NotifyDelegatorChanges) {
 	dh.notifyFunc = notifyFunc
 }
 
-// projectForDistribution copies the fields the segment distribution needs out
-// of a target segment resolved from the shared metacache store.
-//
-// The store hands back its live proto, binlog/statslog arrays included, and
-// replaces that proto wholesale on every mutation. Keeping the pointer in the
-// distribution would pin whole generations of segment metadata per node: an
-// entry is only refreshed when the node reports a new LastModifyTs, and delta
-// updates touch only the reported segments. The field set here matches what
-// GetRecoveryInfoV2 used to return, which is what the distribution retained
-// before the shared store existed.
-func projectForDistribution(info *datapb.SegmentInfo) *datapb.SegmentInfo {
-	if info == nil {
-		return nil
-	}
-	return &datapb.SegmentInfo{
-		ID:                  info.GetID(),
-		CollectionID:        info.GetCollectionID(),
-		PartitionID:         info.GetPartitionID(),
-		InsertChannel:       info.GetInsertChannel(),
-		NumOfRows:           info.GetNumOfRows(),
-		Level:               info.GetLevel(),
-		IsSorted:            info.GetIsSorted(),
-		IsSortedByNamespace: info.GetIsSortedByNamespace(),
-		ManifestPath:        info.GetManifestPath(),
-		DataVersion:         info.GetDataVersion(),
-	}
-}
-
 // loadedIndexBuilds keeps only the loaded build of each index the node
 // reports; the rest of FieldIndexInfo is read from the shared store.
 func loadedIndexBuilds(infos map[int64]*querypb.FieldIndexInfo) map[int64]int64 {
@@ -254,26 +226,33 @@ func loadedJSONStatsFormats(infos map[int64]*querypb.JsonStatsInfo) map[int64]in
 }
 
 func (dh *distHandler) updateSegmentsDistribution(ctx context.Context, resp *querypb.GetDataDistributionResponse) {
-	updates := make([]*meta.Segment, 0, len(resp.GetSegments()))
+	reported := make([]*querypb.SegmentVersionInfo, 0, len(resp.GetSegments()))
+	ids := make([]int64, 0, len(resp.GetSegments()))
 	for _, s := range resp.GetSegments() {
 		// To maintain compatibility with older versions of QueryNode,
 		// QueryCoord should neither process nor interact with L0 segments.
 		if s.GetLevel() == datapb.SegmentLevel_L0 {
 			continue
 		}
-		segmentInfo := projectForDistribution(dh.target.GetSealedSegment(ctx, s.GetCollection(), s.GetID(), meta.CurrentTargetFirst))
-		if segmentInfo == nil {
-			segmentInfo = &datapb.SegmentInfo{
-				ID:            s.GetID(),
-				CollectionID:  s.GetCollection(),
-				PartitionID:   s.GetPartition(),
-				InsertChannel: s.GetChannel(),
-				Level:         s.GetLevel(),
-				IsSorted:      s.GetIsSorted(),
-			}
+		reported = append(reported, s)
+		ids = append(ids, s.GetID())
+	}
+
+	// The record keeps only what the node reports. Its identity keys come
+	// from the store, or from the report when the store has no entry.
+	updates := make([]*meta.LoadedSegment, 0, len(reported))
+	i := 0
+	dh.dist.MetaView().ForEachSegment(ids, func(_ int64, stored *datapb.SegmentInfo, ok bool) {
+		s := reported[i]
+		i++
+		collectionID, channel := s.GetCollection(), s.GetChannel()
+		if ok {
+			collectionID, channel = stored.GetCollectionID(), stored.GetInsertChannel()
 		}
-		updates = append(updates, &meta.Segment{
-			SegmentInfo:        segmentInfo,
+		updates = append(updates, &meta.LoadedSegment{
+			ID:                 s.GetID(),
+			CollectionID:       collectionID,
+			Channel:            channel,
 			Node:               resp.GetNodeID(),
 			Version:            s.GetVersion(),
 			LastDeltaTimestamp: s.GetLastDeltaTimestamp(),
@@ -282,7 +261,7 @@ func (dh *distHandler) updateSegmentsDistribution(ctx context.Context, resp *que
 			ManifestPath:       s.GetManifestPath(),
 			DataVersion:        s.DataVersion,
 		})
-	}
+	})
 
 	if resp.GetIsDelta() {
 		dh.dist.SegmentDistManager.Patch(resp.GetNodeID(), updates, resp.GetRemovedSegmentIds())

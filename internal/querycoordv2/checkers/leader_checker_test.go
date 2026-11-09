@@ -76,7 +76,7 @@ func (suite *LeaderCheckerTestSuite) SetupTest() {
 	suite.meta = meta.NewMeta(idAllocator, store, suite.nodeMgr, suite.metaStore)
 	suite.broker = meta.NewMockBroker(suite.T())
 
-	distManager := meta.NewDistributionManager(suite.nodeMgr)
+	distManager := meta.NewDistributionManager(suite.nodeMgr, meta.WithMetaView(suite.metaStore))
 	targetManager := meta.NewTargetManager(suite.broker, suite.meta, suite.metaStore)
 	suite.checker = NewLeaderChecker(suite.meta, distManager, targetManager, suite.nodeMgr)
 }
@@ -125,7 +125,7 @@ func (suite *LeaderCheckerTestSuite) TestSyncLoadedSegments() {
 	observer.target.UpdateCollectionNextTarget(ctx, int64(1))
 	observer.target.UpdateCollectionCurrentTarget(ctx, 1)
 	loadVersion := time.Now().UnixMilli()
-	observer.dist.SegmentDistManager.Update(1, utils.CreateTestSegment(1, 1, 1, 2, loadVersion, "test-insert-channel"))
+	observer.dist.SegmentDistManager.Update(1, meta.SeedInto(observer.dist, utils.CreateTestSegment(1, 1, 1, 2, loadVersion, "test-insert-channel"))...)
 	observer.dist.ChannelDistManager.Update(2, &meta.DmChannel{
 		VchannelInfo: &datapb.VchannelInfo{
 			CollectionID: 1,
@@ -156,7 +156,7 @@ func (suite *LeaderCheckerTestSuite) TestSyncLoadedSegments() {
 	node1, node2 := int64(1), int64(2)
 	version1, version2 := int64(1), int64(2)
 	observer.dist.SegmentDistManager.Update(node1)
-	observer.dist.SegmentDistManager.Update(node2, utils.CreateTestSegment(1, 1, 1, node2, version2, "test-insert-channel"))
+	observer.dist.SegmentDistManager.Update(node2, meta.SeedInto(observer.dist, utils.CreateTestSegment(1, 1, 1, node2, version2, "test-insert-channel"))...)
 	observer.dist.ChannelDistManager.Update(node2, &meta.DmChannel{
 		VchannelInfo: &datapb.VchannelInfo{
 			CollectionID: 1,
@@ -217,7 +217,7 @@ func (suite *LeaderCheckerTestSuite) TestActivation() {
 	}))
 	observer.target.UpdateCollectionNextTarget(ctx, int64(1))
 	observer.target.UpdateCollectionCurrentTarget(ctx, 1)
-	observer.dist.SegmentDistManager.Update(1, utils.CreateTestSegment(1, 1, 1, 2, 1, "test-insert-channel"))
+	observer.dist.SegmentDistManager.Update(1, meta.SeedInto(observer.dist, utils.CreateTestSegment(1, 1, 1, 2, 1, "test-insert-channel"))...)
 	observer.dist.ChannelDistManager.Update(2, &meta.DmChannel{
 		VchannelInfo: &datapb.VchannelInfo{
 			CollectionID: 1,
@@ -270,7 +270,7 @@ func (suite *LeaderCheckerTestSuite) TestStoppingNode() {
 	expectRecoveryInfo(suite.broker, suite.metaStore, int64(1), channels, segments, nil)
 	observer.target.UpdateCollectionNextTarget(ctx, int64(1))
 	observer.target.UpdateCollectionCurrentTarget(ctx, 1)
-	observer.dist.SegmentDistManager.Update(1, utils.CreateTestSegment(1, 1, 1, 2, 1, "test-insert-channel"))
+	observer.dist.SegmentDistManager.Update(1, meta.SeedInto(observer.dist, utils.CreateTestSegment(1, 1, 1, 2, 1, "test-insert-channel"))...)
 	observer.dist.ChannelDistManager.Update(2, &meta.DmChannel{
 		VchannelInfo: &datapb.VchannelInfo{
 			CollectionID: 1,
@@ -328,8 +328,8 @@ func (suite *LeaderCheckerTestSuite) TestIgnoreSyncLoadedSegments() {
 	observer.target.UpdateCollectionNextTarget(ctx, int64(1))
 	observer.target.UpdateCollectionCurrentTarget(ctx, 1)
 	observer.target.UpdateCollectionNextTarget(ctx, int64(1))
-	observer.dist.SegmentDistManager.Update(1, utils.CreateTestSegment(1, 1, 1, 2, 1, "test-insert-channel"),
-		utils.CreateTestSegment(1, 1, 2, 2, 1, "test-insert-channel"))
+	observer.dist.SegmentDistManager.Update(1, meta.SeedInto(observer.dist, utils.CreateTestSegment(1, 1, 1, 2, 1, "test-insert-channel"),
+		utils.CreateTestSegment(1, 1, 2, 2, 1, "test-insert-channel"))...)
 	observer.dist.ChannelDistManager.Update(2, &meta.DmChannel{
 		VchannelInfo: &datapb.VchannelInfo{
 			CollectionID: 1,
@@ -389,8 +389,8 @@ func (suite *LeaderCheckerTestSuite) TestSyncLoadedSegmentsWithReplicas() {
 
 	observer.target.UpdateCollectionNextTarget(ctx, int64(1))
 	observer.target.UpdateCollectionCurrentTarget(ctx, 1)
-	observer.dist.SegmentDistManager.Update(1, utils.CreateTestSegment(1, 1, 1, 1, 0, "test-insert-channel"))
-	observer.dist.SegmentDistManager.Update(4, utils.CreateTestSegment(1, 1, 1, 4, 0, "test-insert-channel"))
+	observer.dist.SegmentDistManager.Update(1, meta.SeedInto(observer.dist, utils.CreateTestSegment(1, 1, 1, 1, 0, "test-insert-channel"))...)
+	observer.dist.SegmentDistManager.Update(4, meta.SeedInto(observer.dist, utils.CreateTestSegment(1, 1, 1, 4, 0, "test-insert-channel"))...)
 	observer.dist.ChannelDistManager.Update(2, &meta.DmChannel{
 		VchannelInfo: &datapb.VchannelInfo{
 			CollectionID: 1,
@@ -563,7 +563,7 @@ func (suite *LeaderCheckerTestSuite) TestUpdatePartitionStats() {
 	observer.target.UpdateCollectionNextTarget(ctx, int64(1))
 	observer.target.UpdateCollectionCurrentTarget(ctx, 1)
 	loadVersion := time.Now().UnixMilli()
-	observer.dist.SegmentDistManager.Update(1, utils.CreateTestSegment(1, 1, 2, 1, loadVersion, testChannel))
+	observer.dist.SegmentDistManager.Update(1, meta.SeedInto(observer.dist, utils.CreateTestSegment(1, 1, 2, 1, loadVersion, testChannel))...)
 	// observer.dist.ChannelDistManager.Update(2, utils.CreateTestChannel(1, 2, 1, testChannel))
 	// view := utils.CreateTestLeaderView(2, 1, testChannel, map[int64]int64{2: 1}, map[int64]*msgpb.MsgPosition{})
 	// view.PartitionStatsVersions = map[int64]int64{

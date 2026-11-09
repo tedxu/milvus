@@ -191,9 +191,11 @@ func TestMergeMetaSegmentIntoSegmentInfoReadsStore(t *testing.T) {
 	store.PutIndex(&model.Index{CollectionID: 1, FieldID: 101, IndexID: 100, IndexName: "vec"})
 	store.PutSegmentIndexes(&model.SegmentIndex{CollectionID: 1, SegmentID: 10, IndexID: 100, BuildID: 9})
 
-	segment := meta.SegmentFromInfo(&datapb.SegmentInfo{ID: 10, CollectionID: 1, InsertChannel: "ch"})
-	segment.Node = 3
-	segment.IndexBuilds = map[int64]int64{100: 9}
+	segment := meta.SeedSegments(store, &meta.SegmentFixture{
+		SegmentInfo: &datapb.SegmentInfo{ID: 10, CollectionID: 1, InsertChannel: "ch"},
+		Node:        3,
+		IndexBuilds: map[int64]int64{100: 9},
+	})[0]
 	info := &querypb.SegmentInfo{}
 	MergeMetaSegmentIntoSegmentInfo(store, info, segment)
 

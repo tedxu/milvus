@@ -26,6 +26,7 @@ import (
 	"golang.org/x/time/rate"
 
 	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
+	"github.com/milvus-io/milvus/internal/metacache"
 	"github.com/milvus-io/milvus/internal/querycoordv2/assign"
 	"github.com/milvus-io/milvus/internal/querycoordv2/balance"
 	"github.com/milvus-io/milvus/internal/querycoordv2/meta"
@@ -156,7 +157,7 @@ func (c *SegmentChecker) Check(ctx context.Context) []task.Task {
 	for _, nodeInfo := range c.nodeMgr.GetAll() {
 		nodeID := nodeInfo.ID()
 		segmentsOnQN := c.dist.SegmentDistManager.GetByFilter(meta.WithNodeID(nodeID))
-		collectionSegments := lo.GroupBy(segmentsOnQN, func(segment *meta.Segment) int64 { return segment.GetCollectionID() })
+		collectionSegments := lo.GroupBy(segmentsOnQN, func(segment *meta.LoadedSegment) int64 { return segment.GetCollectionID() })
 		for collectionID, segments := range collectionSegments {
 			replica := c.meta.GetByCollectionAndNode(ctx, collectionID, nodeID)
 			if replica == nil {
@@ -258,7 +259,7 @@ func (c *SegmentChecker) checkReplica(ctx context.Context, replica *meta.Replica
 func (c *SegmentChecker) getGrowingSegmentDiff(ctx context.Context, collectionID int64,
 	replica *meta.Replica,
 	delegatorList []*meta.DmChannel,
-) (toLoad []*datapb.SegmentInfo, toRelease []*meta.Segment) {
+) (toLoad []*datapb.SegmentInfo, toRelease []*meta.LoadedSegment) {
 	if len(delegatorList) == 0 {
 		return toLoad, toRelease
 	}
@@ -298,14 +299,11 @@ func (c *SegmentChecker) getGrowingSegmentDiff(ctx context.Context, collectionID
 				if channel, ok := currentTargetChannelMap[view.Channel]; ok {
 					// The reduce task needs the values ingestion used to keep per
 					// growing segment: the view's collection, channel and node.
-					segment := &meta.Segment{
-						SegmentInfo: &datapb.SegmentInfo{
-							ID:            segmentID,
-							CollectionID:  view.CollectionID,
-							StartPosition: position,
-							InsertChannel: view.Channel,
-						},
-						Node: view.ID,
+					segment := &meta.LoadedSegment{
+						ID:           segmentID,
+						CollectionID: view.CollectionID,
+						Channel:      view.Channel,
+						Node:         view.ID,
 					}
 					timestampInSegment := position.GetTimestamp()
 					timestampInTarget := channel.GetSeekPosition().GetTimestamp()
@@ -335,12 +333,12 @@ func (c *SegmentChecker) getSealedSegmentDiff(
 	ctx context.Context,
 	collectionID int64,
 	replica *meta.Replica,
-	dist []*meta.Segment,
-) (toLoad []*datapb.SegmentInfo, loadPriorities []commonpb.LoadPriority, toRelease []*meta.Segment, toUpdate []*meta.Segment) {
+	dist []*meta.LoadedSegment,
+) (toLoad []*datapb.SegmentInfo, loadPriorities []commonpb.LoadPriority, toRelease []*meta.LoadedSegment, toUpdate []*meta.LoadedSegment) {
 	sort.Slice(dist, func(i, j int) bool {
 		return dist[i].Version < dist[j].Version
 	})
-	distMap := make(map[int64]*meta.Segment)
+	distMap := make(map[int64]*meta.LoadedSegment)
 	for _, s := range dist {
 		distMap[s.GetID()] = s
 	}
@@ -453,9 +451,9 @@ func (c *SegmentChecker) getSealedSegmentDiff(
 	return toLoad, loadPriorities, toRelease, toUpdate
 }
 
-func (c *SegmentChecker) findRepeatedSealedSegments(ctx context.Context, replica *meta.Replica, dist []*meta.Segment) []*meta.Segment {
-	segments := make([]*meta.Segment, 0)
-	versions := make(map[int64]*meta.Segment)
+func (c *SegmentChecker) findRepeatedSealedSegments(ctx context.Context, replica *meta.Replica, dist []*meta.LoadedSegment) []*meta.LoadedSegment {
+	segments := make([]*meta.LoadedSegment, 0)
+	versions := make(map[int64]*meta.LoadedSegment)
 	for _, s := range dist {
 		maxVer, ok := versions[s.GetID()]
 		if !ok {
@@ -474,8 +472,8 @@ func (c *SegmentChecker) findRepeatedSealedSegments(ctx context.Context, replica
 }
 
 // for duplicated segment, we should release the one which is not serving on leader
-func (c *SegmentChecker) filterOutExistedOnLeader(replica *meta.Replica, segments []*meta.Segment, ch2DelegatorList map[string][]*meta.DmChannel) []*meta.Segment {
-	notServing := make([]*meta.Segment, 0, len(segments))
+func (c *SegmentChecker) filterOutExistedOnLeader(replica *meta.Replica, segments []*meta.LoadedSegment, ch2DelegatorList map[string][]*meta.DmChannel) []*meta.LoadedSegment {
+	notServing := make([]*meta.LoadedSegment, 0, len(segments))
 	for _, s := range segments {
 		delegatorList := ch2DelegatorList[s.GetInsertChannel()]
 		if len(delegatorList) == 0 {
@@ -499,11 +497,14 @@ func (c *SegmentChecker) filterOutExistedOnLeader(replica *meta.Replica, segment
 }
 
 // for sealed segment which doesn't exist in target, we should release it after delegator has updated to latest readable version
-func (c *SegmentChecker) filterOutSegmentInUse(ctx context.Context, replica *meta.Replica, segments []*meta.Segment, ch2DelegatorList map[string][]*meta.DmChannel) []*meta.Segment {
-	notUsed := make([]*meta.Segment, 0, len(segments))
-	for _, s := range segments {
+func (c *SegmentChecker) filterOutSegmentInUse(ctx context.Context, replica *meta.Replica, segments []*meta.LoadedSegment, ch2DelegatorList map[string][]*meta.DmChannel) []*meta.LoadedSegment {
+	notUsed := make([]*meta.LoadedSegment, 0, len(segments))
+	stored := storedSegments(c.dist.MetaView(), segments)
+	for i, s := range segments {
 		currentTargetVersion := c.targetMgr.GetCollectionTargetVersion(ctx, s.CollectionID, meta.CurrentTarget)
-		partition := c.meta.GetPartition(ctx, s.PartitionID)
+		// A segment the store no longer has resolves no partition, so no
+		// delegator holds it back from release.
+		partition := c.meta.GetPartition(ctx, stored[i].GetPartitionID())
 
 		delegatorList := ch2DelegatorList[s.GetInsertChannel()]
 		if len(delegatorList) == 0 {
@@ -582,7 +583,7 @@ func (c *SegmentChecker) createSegmentLoadTasks(ctx context.Context, segments []
 	return balance.CreateSegmentTasksFromPlans(ctx, c.ID(), Params.QueryCoordCfg.SegmentTaskTimeout.GetAsDuration(time.Millisecond), plans)
 }
 
-func (c *SegmentChecker) createSegmentReopenTasks(ctx context.Context, segments []*meta.Segment, replica *meta.Replica) []task.Task {
+func (c *SegmentChecker) createSegmentReopenTasks(ctx context.Context, segments []*meta.LoadedSegment, replica *meta.Replica) []task.Task {
 	ret := make([]task.Task, 0, len(segments))
 	for _, s := range segments {
 		action := task.NewSegmentAction(s.Node, task.ActionTypeReopen, s.GetInsertChannel(), s.GetID())
@@ -611,10 +612,13 @@ func (c *SegmentChecker) createSegmentReopenTasks(ctx context.Context, segments 
 	return ret
 }
 
-func (c *SegmentChecker) createSegmentReduceTasks(ctx context.Context, segments []*meta.Segment, replica *meta.Replica, scope querypb.DataScope) []task.Task {
+func (c *SegmentChecker) createSegmentReduceTasks(ctx context.Context, segments []*meta.LoadedSegment, replica *meta.Replica, scope querypb.DataScope) []task.Task {
 	ret := make([]task.Task, 0, len(segments))
-	for _, s := range segments {
-		action := task.NewSegmentActionWithScope(s.Node, task.ActionTypeReduce, s.GetInsertChannel(), s.GetID(), scope, int(s.GetNumOfRows()))
+	stored := storedSegments(c.dist.MetaView(), segments)
+	for i, s := range segments {
+		// A segment the store no longer has is released on its own channel
+		// with 0 rows.
+		action := task.NewSegmentActionWithScope(s.Node, task.ActionTypeReduce, s.GetInsertChannel(), s.GetID(), scope, int(stored[i].GetNumOfRows()))
 		task, err := task.NewSegmentTask(
 			ctx,
 			Params.QueryCoordCfg.SegmentTaskTimeout.GetAsDuration(time.Millisecond),
@@ -647,4 +651,26 @@ func (c *SegmentChecker) getTraceCtx(ctx context.Context, collectionID int64) co
 	}
 
 	return trace.ContextWithSpan(ctx, coll.LoadSpan)
+}
+
+// storedSegments returns the store's proto for each entry, in one batched
+// read; nil for an entry the store no longer has. Getters on nil return
+// zero values.
+func storedSegments(view metacache.MetaView, segments []*meta.LoadedSegment) []*datapb.SegmentInfo {
+	stored := make([]*datapb.SegmentInfo, len(segments))
+	if len(segments) == 0 {
+		return stored
+	}
+	ids := make([]int64, len(segments))
+	for i, segment := range segments {
+		ids[i] = segment.ID
+	}
+	i := 0
+	view.ForEachSegment(ids, func(_ int64, info *datapb.SegmentInfo, ok bool) {
+		if ok {
+			stored[i] = info
+		}
+		i++
+	})
+	return stored
 }

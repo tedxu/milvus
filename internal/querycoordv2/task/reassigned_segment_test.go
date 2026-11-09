@@ -48,7 +48,7 @@ func TestOrphanSegmentCleanupAfterNodeReassigned(t *testing.T) {
 			nodes := session.NewNodeManager()
 			nodes.Add(session.NewNodeInfo(session.ImmutableNodeInfo{NodeID: nodeID}))
 			dist := meta.NewDistributionManager(nil)
-			dist.SegmentDistManager.Update(nodeID, utils.CreateTestSegment(collectionID, 1, segmentID, nodeID, 1, "ch"))
+			dist.SegmentDistManager.Update(nodeID, meta.SeedInto(dist, utils.CreateTestSegment(collectionID, 1, segmentID, nodeID, 1, "ch"))...)
 			scheduler := &taskScheduler{
 				ctx: ctx, meta: &meta.Meta{ReplicaManager: &meta.ReplicaManager{}}, nodeMgr: nodes, distMgr: dist,
 			}

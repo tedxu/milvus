@@ -119,12 +119,12 @@ func (b *RoundRobinBalancer) balanceSegments(ctx context.Context, replica *meta.
 // genSegmentPlan generates segment balance plans based on segment count per node.
 // It moves segments from nodes with more segments to nodes with fewer segments.
 func (b *RoundRobinBalancer) genSegmentPlan(ctx context.Context, replica *meta.Replica, rwNodes []int64) []assign.SegmentAssignPlan {
-	segmentDist := make(map[int64][]*meta.Segment)
+	segmentDist := make(map[int64][]*meta.LoadedSegment)
 	totalSegments := 0
 
 	for _, node := range rwNodes {
 		dist := b.dist.SegmentDistManager.GetByFilter(meta.WithCollectionID(replica.GetCollectionID()), meta.WithNodeID(node))
-		segments := lo.Filter(dist, func(segment *meta.Segment, _ int) bool {
+		segments := lo.Filter(dist, func(segment *meta.LoadedSegment, _ int) bool {
 			return b.targetMgr.CanSegmentBeMoved(ctx, segment.GetCollectionID(), segment.GetID())
 		})
 		segmentDist[node] = segments
@@ -140,7 +140,7 @@ func (b *RoundRobinBalancer) genSegmentPlan(ctx context.Context, replica *meta.R
 
 	// Find nodes with fewer segments than average
 	nodesWithLessSegment := make([]int64, 0)
-	segmentsToMove := make([]*meta.Segment, 0)
+	segmentsToMove := make([]*meta.LoadedSegment, 0)
 
 	for node, segments := range segmentDist {
 		if len(segments) <= average {
@@ -153,7 +153,7 @@ func (b *RoundRobinBalancer) genSegmentPlan(ctx context.Context, replica *meta.R
 	}
 
 	// Filter out redundant segments (segments that appear multiple times in distribution)
-	segmentsToMove = lo.Filter(segmentsToMove, func(s *meta.Segment, _ int) bool {
+	segmentsToMove = lo.Filter(segmentsToMove, func(s *meta.LoadedSegment, _ int) bool {
 		return len(b.dist.SegmentDistManager.GetByFilter(meta.WithReplica(replica), meta.WithSegmentID(s.GetID()))) == 1
 	})
 
@@ -161,7 +161,7 @@ func (b *RoundRobinBalancer) genSegmentPlan(ctx context.Context, replica *meta.R
 		return nil
 	}
 
-	segmentPlans := b.assignPolicy.AssignSegment(ctx, replica.GetCollectionID(), assign.SegmentRefsFromDist(segmentsToMove), nodesWithLessSegment, false)
+	segmentPlans := b.assignPolicy.AssignSegment(ctx, replica.GetCollectionID(), assign.SegmentRefsFromDist(b.dist.MetaView(), segmentsToMove), nodesWithLessSegment, false)
 	for i := range segmentPlans {
 		segmentPlans[i].From = segmentPlans[i].Segment.From
 		segmentPlans[i].Replica = replica

@@ -502,8 +502,8 @@ func (suite *TaskSuite) TestLoadSegmentTask() {
 	for _, segment := range suite.loadSegments {
 		view.Segments[segment] = &querypb.SegmentDist{NodeID: targetNode, Version: 0}
 	}
-	distSegments := lo.Map(segments, func(info *datapb.SegmentInfo, _ int) *meta.Segment {
-		return meta.SegmentFromInfo(info)
+	distSegments := lo.Map(segments, func(info *datapb.SegmentInfo, _ int) *meta.SegmentFixture {
+		return meta.FixtureFromInfo(info)
 	})
 	suite.dist.ChannelDistManager.Update(targetNode, &meta.DmChannel{
 		VchannelInfo: &datapb.VchannelInfo{
@@ -514,7 +514,7 @@ func (suite *TaskSuite) TestLoadSegmentTask() {
 		Version: 1,
 		View:    view,
 	})
-	suite.dist.SegmentDistManager.Update(targetNode, distSegments...)
+	suite.dist.SegmentDistManager.Update(targetNode, meta.SeedInto(suite.dist, distSegments...)...)
 	suite.dispatchAndWait(targetNode)
 	suite.AssertTaskNum(0, 0, 0, 0)
 
@@ -607,10 +607,10 @@ func (suite *TaskSuite) TestLoadSegmentTaskNotIndex() {
 	for _, segment := range suite.loadSegments {
 		view.Segments[segment] = &querypb.SegmentDist{NodeID: targetNode, Version: 0}
 	}
-	distSegments := lo.Map(segments, func(info *datapb.SegmentInfo, _ int) *meta.Segment {
-		return meta.SegmentFromInfo(info)
+	distSegments := lo.Map(segments, func(info *datapb.SegmentInfo, _ int) *meta.SegmentFixture {
+		return meta.FixtureFromInfo(info)
 	})
-	suite.dist.SegmentDistManager.Update(targetNode, distSegments...)
+	suite.dist.SegmentDistManager.Update(targetNode, meta.SeedInto(suite.dist, distSegments...)...)
 	suite.dispatchAndWait(targetNode)
 	suite.AssertTaskNum(0, 0, 0, 0)
 
@@ -722,10 +722,10 @@ func (suite *TaskSuite) TestReleaseSegmentTask() {
 		Channel:      channel.ChannelName,
 		Segments:     make(map[int64]*querypb.SegmentDist),
 	}
-	segments := make([]*meta.Segment, 0)
+	segments := make([]*meta.SegmentFixture, 0)
 	tasks := []Task{}
 	for _, segment := range suite.releaseSegments {
-		segments = append(segments, &meta.Segment{
+		segments = append(segments, &meta.SegmentFixture{
 			SegmentInfo: &datapb.SegmentInfo{
 				ID:            segment,
 				CollectionID:  suite.collection,
@@ -748,7 +748,7 @@ func (suite *TaskSuite) TestReleaseSegmentTask() {
 		err = suite.scheduler.Add(task)
 		suite.NoError(err)
 	}
-	suite.dist.SegmentDistManager.Update(targetNode, segments...)
+	suite.dist.SegmentDistManager.Update(targetNode, meta.SeedInto(suite.dist, segments...)...)
 
 	segmentsNum := len(suite.releaseSegments)
 	suite.AssertTaskNum(0, segmentsNum, 0, segmentsNum)
@@ -883,7 +883,7 @@ func (suite *TaskSuite) TestSegmentTaskWaitsDistAfterLoadRPC() {
 	suite.AssertTaskNum(1, 0, 0, 1)
 	suite.Equal(TaskStatusStarted, task.Status())
 
-	suite.dist.SegmentDistManager.Update(targetNode, utils.CreateTestSegment(suite.collection, partition, segmentID, targetNode, 1, channel.ChannelName))
+	suite.dist.SegmentDistManager.Update(targetNode, meta.SeedInto(suite.dist, utils.CreateTestSegment(suite.collection, partition, segmentID, targetNode, 1, channel.ChannelName))...)
 	suite.dispatchAndWait(targetNode)
 	suite.AssertTaskNum(0, 0, 0, 0)
 	suite.Equal(TaskStatusSucceeded, task.Status())
@@ -914,7 +914,7 @@ func (suite *TaskSuite) TestSegmentTaskWaitsDistAfterReleaseRPC() {
 	)
 	suite.NoError(err)
 	suite.NoError(suite.scheduler.Add(task))
-	suite.dist.SegmentDistManager.Update(targetNode, utils.CreateTestSegment(suite.collection, partition, segmentID, targetNode, 1, channel.ChannelName))
+	suite.dist.SegmentDistManager.Update(targetNode, meta.SeedInto(suite.dist, utils.CreateTestSegment(suite.collection, partition, segmentID, targetNode, 1, channel.ChannelName))...)
 	suite.AssertTaskNum(0, 1, 0, 1)
 
 	suite.dispatchAndWait(targetNode)
@@ -1041,7 +1041,7 @@ func (suite *TaskSuite) TestMoveSegmentTask() {
 		Status:       &querypb.LeaderViewStatus{Serviceable: true},
 	}
 	tasks := []Task{}
-	segments := make([]*meta.Segment, 0)
+	segments := make([]*meta.SegmentFixture, 0)
 	segmentInfos := make([]*datapb.SegmentInfo, 0)
 	for _, segment := range suite.moveSegments {
 		segments = append(segments,
@@ -1069,7 +1069,7 @@ func (suite *TaskSuite) TestMoveSegmentTask() {
 	suite.broker.EXPECT().GetRecoveryInfoV2(mock.Anything, suite.collection).Return([]*datapb.VchannelInfo{vchannel}, segmentInfos, nil)
 	suite.target.UpdateCollectionNextTarget(ctx, suite.collection)
 	suite.target.UpdateCollectionCurrentTarget(ctx, suite.collection)
-	suite.dist.SegmentDistManager.Update(sourceNode, segments...)
+	suite.dist.SegmentDistManager.Update(sourceNode, meta.SeedInto(suite.dist, segments...)...)
 	suite.dist.ChannelDistManager.Update(leader, &meta.DmChannel{
 		VchannelInfo: &datapb.VchannelInfo{
 			CollectionID: suite.collection,
@@ -1095,11 +1095,11 @@ func (suite *TaskSuite) TestMoveSegmentTask() {
 	for _, segment := range suite.moveSegments {
 		view.Segments[segment] = &querypb.SegmentDist{NodeID: targetNode, Version: 0}
 	}
-	distSegments := lo.Map(segmentInfos, func(info *datapb.SegmentInfo, _ int) *meta.Segment {
-		return meta.SegmentFromInfo(info)
+	distSegments := lo.Map(segmentInfos, func(info *datapb.SegmentInfo, _ int) *meta.SegmentFixture {
+		return meta.FixtureFromInfo(info)
 	})
 
-	suite.dist.SegmentDistManager.Update(targetNode, distSegments...)
+	suite.dist.SegmentDistManager.Update(targetNode, meta.SeedInto(suite.dist, distSegments...)...)
 	// First action done, execute the second action
 	suite.dispatchAndWait(sourceNode)
 	suite.dist.SegmentDistManager.Update(sourceNode)
@@ -1354,8 +1354,8 @@ func (suite *TaskSuite) TestLeaderTaskSet() {
 	for _, segment := range suite.loadSegments {
 		view.Segments[segment] = &querypb.SegmentDist{NodeID: targetNode, Version: 0}
 	}
-	distSegments := lo.Map(segments, func(info *datapb.SegmentInfo, _ int) *meta.Segment {
-		return meta.SegmentFromInfo(info)
+	distSegments := lo.Map(segments, func(info *datapb.SegmentInfo, _ int) *meta.SegmentFixture {
+		return meta.FixtureFromInfo(info)
 	})
 	suite.dist.ChannelDistManager.Update(targetNode, &meta.DmChannel{
 		VchannelInfo: &datapb.VchannelInfo{
@@ -1365,7 +1365,7 @@ func (suite *TaskSuite) TestLeaderTaskSet() {
 		Node: targetNode,
 		View: view,
 	})
-	suite.dist.SegmentDistManager.Update(targetNode, distSegments...)
+	suite.dist.SegmentDistManager.Update(targetNode, meta.SeedInto(suite.dist, distSegments...)...)
 	suite.dispatchAndWait(targetNode)
 	suite.AssertTaskNum(0, 0, 0, 0)
 
@@ -1628,10 +1628,10 @@ func (suite *TaskSuite) TestLeaderTaskRemove() {
 		Segments:     make(map[int64]*querypb.SegmentDist),
 		Status:       &querypb.LeaderViewStatus{Serviceable: true},
 	}
-	segments := make([]*meta.Segment, 0)
+	segments := make([]*meta.SegmentFixture, 0)
 	tasks := []Task{}
 	for _, segment := range suite.releaseSegments {
-		segments = append(segments, &meta.Segment{
+		segments = append(segments, &meta.SegmentFixture{
 			SegmentInfo: &datapb.SegmentInfo{
 				ID:            segment,
 				CollectionID:  suite.collection,
@@ -1653,7 +1653,7 @@ func (suite *TaskSuite) TestLeaderTaskRemove() {
 		err := suite.scheduler.Add(task)
 		suite.NoError(err)
 	}
-	suite.dist.SegmentDistManager.Update(targetNode, segments...)
+	suite.dist.SegmentDistManager.Update(targetNode, meta.SeedInto(suite.dist, segments...)...)
 	suite.dist.ChannelDistManager.Update(targetNode, &meta.DmChannel{
 		VchannelInfo: &datapb.VchannelInfo{
 			CollectionID: suite.collection,
@@ -2025,16 +2025,14 @@ func (suite *TaskSuite) TestSegmentTaskDeltaWithDistFilter() {
 	snapshot = scheduler.GetSegmentTaskDeltaSnapshot([]int64{targetNode + 1}, coll)
 	suite.Equal(0, snapshot.GetByNode(targetNode))
 
-	suite.dist.SegmentDistManager.Update(targetNode,
-		utils.CreateTestSegment(coll, partition, growSegmentID, targetNode, 1, channel))
+	suite.dist.SegmentDistManager.Update(targetNode, meta.SeedInto(suite.dist, utils.CreateTestSegment(coll, partition, growSegmentID, targetNode, 1, channel))...)
 	snapshot = scheduler.GetSegmentTaskDeltaSnapshot([]int64{targetNode}, coll)
 	suite.Equal(0, snapshot.GetByNode(targetNode))
 	suite.Equal(0, snapshot.GetByNodeInCollection(targetNode))
 
 	scheduler.decExecutingTaskDelta(growTask)
 
-	suite.dist.SegmentDistManager.Update(sourceNode,
-		utils.CreateTestSegment(coll, partition, reduceSegmentID, sourceNode, 1, channel))
+	suite.dist.SegmentDistManager.Update(sourceNode, meta.SeedInto(suite.dist, utils.CreateTestSegment(coll, partition, reduceSegmentID, sourceNode, 1, channel))...)
 	reduceTask, err := NewSegmentTask(
 		ctx,
 		10*time.Second,
@@ -2273,7 +2271,7 @@ func TestSegmentActionFinishStates(t *testing.T) {
 	action.rpcReturned.Store(true)
 	assert.False(t, action.IsFinished(dist))
 
-	dist.SegmentDistManager.Update(1, utils.CreateTestSegment(100, 1, 10, 1, 1, "ch"))
+	dist.SegmentDistManager.Update(1, meta.SeedInto(dist, utils.CreateTestSegment(100, 1, 10, 1, 1, "ch"))...)
 	assert.True(t, action.IsFinished(dist))
 
 	updateAction := NewSegmentActionWithScope(1, ActionTypeUpdate, "ch", 10, querypb.DataScope_Historical, 0)
@@ -2509,7 +2507,7 @@ func (suite *TaskSuite) TestExecutor_MoveSegmentTask() {
 	})
 
 	// Add segments to original node distribution for release
-	segments := []*meta.Segment{
+	segments := []*meta.SegmentFixture{
 		{
 			SegmentInfo: &datapb.SegmentInfo{
 				ID:            segmentID,
@@ -2519,7 +2517,7 @@ func (suite *TaskSuite) TestExecutor_MoveSegmentTask() {
 			},
 		},
 	}
-	suite.dist.SegmentDistManager.Update(sourceNode, segments...)
+	suite.dist.SegmentDistManager.Update(sourceNode, meta.SeedInto(suite.dist, segments...)...)
 
 	// Set up broker expectations
 	segmentInfos := []*datapb.SegmentInfo{
@@ -2551,7 +2549,7 @@ func (suite *TaskSuite) TestExecutor_MoveSegmentTask() {
 	executor.executeSegmentAction(moveTask, 0)
 	suite.Equal(targetNode, moveTask.ShardLeaderID())
 	suite.NoError(moveTask.Err())
-	suite.dist.SegmentDistManager.Update(targetNode, utils.CreateTestSegment(suite.collection, 1, segmentID, targetNode, 1, channel.ChannelName))
+	suite.dist.SegmentDistManager.Update(targetNode, meta.SeedInto(suite.dist, utils.CreateTestSegment(suite.collection, 1, segmentID, targetNode, 1, channel.ChannelName))...)
 	suite.True(moveTask.actions[0].IsFinished(suite.dist))
 
 	// expect release action will execute successfully
@@ -2934,7 +2932,7 @@ func (suite *TaskSuite) TestTaskStaleBySegmentInDist() {
 		suite.NoError(err)
 
 		// Now simulate segment being loaded: add segment to dist
-		suite.dist.SegmentDistManager.Update(targetNode, utils.CreateTestSegment(suite.collection, 1, segmentID, targetNode, 1, channel.ChannelName))
+		suite.dist.SegmentDistManager.Update(targetNode, meta.SeedInto(suite.dist, utils.CreateTestSegment(suite.collection, 1, segmentID, targetNode, 1, channel.ChannelName))...)
 
 		// Dispatch will trigger promote which calls checkStale
 		suite.dispatchAndWait(targetNode)
@@ -2963,7 +2961,7 @@ func (suite *TaskSuite) TestTaskStaleBySegmentInDist() {
 		segmentID := suite.releaseSegments[0]
 
 		// Add segment to dist first
-		suite.dist.SegmentDistManager.Update(targetNode, utils.CreateTestSegment(suite.collection, 1, segmentID, targetNode, 1, channel.ChannelName))
+		suite.dist.SegmentDistManager.Update(targetNode, meta.SeedInto(suite.dist, utils.CreateTestSegment(suite.collection, 1, segmentID, targetNode, 1, channel.ChannelName))...)
 
 		// Create a Reduce task for the segment (should not be affected by dist check)
 		task, err := NewSegmentTask(

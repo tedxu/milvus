@@ -5,7 +5,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
 	"github.com/milvus-io/milvus/internal/json"
 	"github.com/milvus-io/milvus/internal/metacache/metacachetest"
 	"github.com/milvus-io/milvus/internal/querycoordv2/session"
@@ -19,25 +18,11 @@ func TestGetDistributionJSON(t *testing.T) {
 	manager := NewDistributionManager(session.NewNodeManager())
 
 	// Add some segments to the SegmentDistManager
-	segment1 := SegmentFromInfo(&datapb.SegmentInfo{
-		ID:            1,
-		CollectionID:  100,
-		PartitionID:   10,
-		InsertChannel: "channel-1",
-		NumOfRows:     1000,
-		State:         commonpb.SegmentState_Flushed,
-	})
+	segment1 := &LoadedSegment{ID: 1, CollectionID: 100, Channel: "channel-1"}
 	segment1.Node = 1
 	segment1.Version = 1
 
-	segment2 := SegmentFromInfo(&datapb.SegmentInfo{
-		ID:            2,
-		CollectionID:  200,
-		PartitionID:   20,
-		InsertChannel: "channel-2",
-		NumOfRows:     2000,
-		State:         commonpb.SegmentState_Flushed,
-	})
+	segment2 := &LoadedSegment{ID: 2, CollectionID: 200, Channel: "channel-2"}
 	segment2.Node = 2
 	segment2.Version = 1
 

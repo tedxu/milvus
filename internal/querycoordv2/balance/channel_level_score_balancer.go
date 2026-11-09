@@ -193,10 +193,10 @@ func (b *ChannelLevelScoreBalancer) genSegmentPlanForOutboundNodes(ctx context.C
 	segmentPlans := make([]assign.SegmentAssignPlan, 0)
 	for _, nodeID := range offlineNodes {
 		dist := b.dist.SegmentDistManager.GetByFilter(meta.WithCollectionID(replica.GetCollectionID()), meta.WithNodeID(nodeID), meta.WithChannel(channelName))
-		segments := lo.Filter(dist, func(segment *meta.Segment, _ int) bool {
+		segments := assign.SegmentRefsFromDist(b.dist.MetaView(), lo.Filter(dist, func(segment *meta.LoadedSegment, _ int) bool {
 			return b.targetMgr.CanSegmentBeMoved(ctx, segment.GetCollectionID(), segment.GetID())
-		})
-		plans := b.GetAssignPolicy().AssignSegment(ctx, replica.GetCollectionID(), assign.SegmentRefsFromDist(segments), onlineNodes, false)
+		}))
+		plans := b.GetAssignPolicy().AssignSegment(ctx, replica.GetCollectionID(), segments, onlineNodes, false)
 		for i := range plans {
 			plans[i].From = nodeID
 			plans[i].Replica = replica
@@ -222,18 +222,18 @@ func (b *ChannelLevelScoreBalancer) genSegmentPlan(ctx context.Context, br *bala
 		mlog.Int64("replicaID", replica.GetID()),
 		mlog.Stringers("nodes", lo.Values(nodeItemsMap)))
 
-	segmentDist := make(map[int64][]*meta.Segment)
+	segmentDist := make(map[int64][]assign.SegmentRef)
 	// list all segment which could be balanced, and calculate node's score
 	for _, node := range onlineNodes {
 		dist := b.dist.SegmentDistManager.GetByFilter(meta.WithCollectionID(replica.GetCollectionID()), meta.WithNodeID(node), meta.WithChannel(channelName))
-		segments := lo.Filter(dist, func(segment *meta.Segment, _ int) bool {
+		segments := assign.SegmentRefsFromDist(b.dist.MetaView(), lo.Filter(dist, func(segment *meta.LoadedSegment, _ int) bool {
 			return b.targetMgr.CanSegmentBeMoved(ctx, segment.GetCollectionID(), segment.GetID())
-		})
+		}))
 		segmentDist[node] = segments
 	}
 
 	// find the segment from the node which has more score than the average
-	segmentsToMove := make([]*meta.Segment, 0)
+	segmentsToMove := make([]assign.SegmentRef, 0)
 	for node, segments := range segmentDist {
 		currentScore := nodeItemsMap[node].GetCurrentScore()
 		assignedScore := nodeItemsMap[node].GetAssignedScore()
@@ -242,11 +242,11 @@ func (b *ChannelLevelScoreBalancer) genSegmentPlan(ctx context.Context, br *bala
 		}
 
 		sort.Slice(segments, func(i, j int) bool {
-			return segments[i].GetNumOfRows() < segments[j].GetNumOfRows()
+			return segments[i].NumOfRows < segments[j].NumOfRows
 		})
 		for _, s := range segments {
 			segmentsToMove = append(segmentsToMove, s)
-			currentScore -= b.assignPolicy.CalculateSegmentScore(assign.SegmentRefFromInfo(s.SegmentInfo, s.Node))
+			currentScore -= b.assignPolicy.CalculateSegmentScore(s)
 			if currentScore <= assignedScore {
 				break
 			}
@@ -254,15 +254,15 @@ func (b *ChannelLevelScoreBalancer) genSegmentPlan(ctx context.Context, br *bala
 	}
 
 	// if the segment are redundant, skip it's balance for now
-	segmentsToMove = lo.Filter(segmentsToMove, func(s *meta.Segment, _ int) bool {
-		return len(b.dist.SegmentDistManager.GetByFilter(meta.WithReplica(replica), meta.WithSegmentID(s.GetID()))) == 1
+	segmentsToMove = lo.Filter(segmentsToMove, func(s assign.SegmentRef, _ int) bool {
+		return len(b.dist.SegmentDistManager.GetByFilter(meta.WithReplica(replica), meta.WithSegmentID(s.ID))) == 1
 	})
 
 	if len(segmentsToMove) == 0 {
 		return nil
 	}
 
-	segmentPlans := b.GetAssignPolicy().AssignSegment(ctx, replica.GetCollectionID(), assign.SegmentRefsFromDist(segmentsToMove), onlineNodes, false)
+	segmentPlans := b.GetAssignPolicy().AssignSegment(ctx, replica.GetCollectionID(), segmentsToMove, onlineNodes, false)
 	for i := range segmentPlans {
 		segmentPlans[i].From = segmentPlans[i].Segment.From
 		segmentPlans[i].Replica = replica

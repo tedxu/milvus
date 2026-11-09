@@ -82,7 +82,7 @@ func (suite *CheckerControllerSuite) SetupTest() {
 	suite.nodeMgr = session.NewNodeManager()
 	suite.metaStore = metacache.NewMetaStore(nil)
 	suite.meta = meta.NewMeta(idAllocator, store, suite.nodeMgr, suite.metaStore)
-	suite.dist = meta.NewDistributionManager(suite.nodeMgr)
+	suite.dist = meta.NewDistributionManager(suite.nodeMgr, meta.WithMetaView(suite.metaStore))
 	suite.broker = meta.NewMockBroker(suite.T())
 	suite.targetManager = meta.NewTargetManager(suite.broker, suite.meta, suite.metaStore)
 

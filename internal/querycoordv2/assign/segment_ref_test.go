@@ -44,11 +44,24 @@ func newTieTestNodes(t *testing.T, n int64) (*session.NodeManager, *task.MockSch
 	return nodeManager, scheduler
 }
 
+// refsOf builds the refs that fixtures resolve to.
+func refsOf(fixtures []*meta.SegmentFixture) []SegmentRef {
+	refs := make([]SegmentRef, 0, len(fixtures))
+	for _, f := range fixtures {
+		refs = append(refs, SegmentRefFromInfo(f.SegmentInfo, f.Node))
+	}
+	return refs
+}
+
 func TestSegmentRefsFromDist(t *testing.T) {
-	refs := SegmentRefsFromDist([]*meta.Segment{
-		{SegmentInfo: &datapb.SegmentInfo{ID: 1, CollectionID: 10, PartitionID: 100, NumOfRows: 7, InsertChannel: "ch1", Level: datapb.SegmentLevel_L1}, Node: 1},
-		{SegmentInfo: &datapb.SegmentInfo{ID: 2, CollectionID: 10, PartitionID: 101, NumOfRows: 9, InsertChannel: "ch2", Level: datapb.SegmentLevel_L2}, Node: 2},
-	})
+	store := metacache.NewMetaStore(nil)
+	records := meta.SeedSegments(store,
+		&meta.SegmentFixture{SegmentInfo: &datapb.SegmentInfo{ID: 1, CollectionID: 10, PartitionID: 100, NumOfRows: 7, InsertChannel: "ch1", Level: datapb.SegmentLevel_L1}, Node: 1},
+		&meta.SegmentFixture{SegmentInfo: &datapb.SegmentInfo{ID: 2, CollectionID: 10, PartitionID: 101, NumOfRows: 9, InsertChannel: "ch2", Level: datapb.SegmentLevel_L2}, Node: 2},
+	)
+	// A record the store no longer has is dropped.
+	records = append(records, &meta.LoadedSegment{ID: 3, CollectionID: 10, Channel: "ch1", Node: 3})
+	refs := SegmentRefsFromDist(store, records)
 	assert.Equal(t, []SegmentRef{
 		{ID: 1, CollectionID: 10, PartitionID: 100, NumOfRows: 7, Channel: "ch1", Level: datapb.SegmentLevel_L1, From: 1},
 		{ID: 2, CollectionID: 10, PartitionID: 101, NumOfRows: 9, Channel: "ch2", Level: datapb.SegmentLevel_L2, From: 2},
@@ -60,13 +73,13 @@ func TestSegmentRefsFromDist(t *testing.T) {
 func TestScoreAssignMovingSegmentReducesSource(t *testing.T) {
 	nodeManager, scheduler := newTieTestNodes(t, 2)
 	dist := meta.NewDistributionManager(nodeManager)
-	onNode1 := []*meta.Segment{
+	onNode1 := []*meta.SegmentFixture{
 		{SegmentInfo: &datapb.SegmentInfo{ID: 1, CollectionID: 100, NumOfRows: 1000}, Node: 1},
 		{SegmentInfo: &datapb.SegmentInfo{ID: 2, CollectionID: 100, NumOfRows: 1000}, Node: 1},
 	}
-	dist.SegmentDistManager.Update(1, onNode1...)
+	dist.SegmentDistManager.Update(1, meta.SeedInto(dist, onNode1...)...)
 	policy := newScoreBasedAssignPolicy(nodeManager, scheduler, dist, meta.NewMeta(nil, nil, nodeManager, metacache.NewMetaStore(nil)))
-	plans := policy.AssignSegment(context.Background(), 100, SegmentRefsFromDist(onNode1), []int64{1, 2}, true)
+	plans := policy.AssignSegment(context.Background(), 100, refsOf(onNode1), []int64{1, 2}, true)
 	require.Len(t, plans, 2)
 	for _, plan := range plans {
 		assert.Equal(t, int64(1), plan.From)

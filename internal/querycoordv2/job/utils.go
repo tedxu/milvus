@@ -26,6 +26,7 @@ import (
 	"github.com/milvus-io/milvus/internal/querycoordv2/meta"
 	"github.com/milvus-io/milvus/internal/querycoordv2/observers"
 	"github.com/milvus-io/milvus/pkg/v3/mlog"
+	"github.com/milvus-io/milvus/pkg/v3/proto/datapb"
 	"github.com/milvus-io/milvus/pkg/v3/util/merr"
 	"github.com/milvus-io/milvus/pkg/v3/util/typeutil"
 )
@@ -53,9 +54,18 @@ func WaitCollectionReleased(ctx context.Context, dist *meta.DistributionManager,
 			segments = dist.SegmentDistManager.GetByFilter(meta.WithCollectionID(collection))
 		)
 		if partitionSet.Len() > 0 {
-			segments = lo.Filter(segments, func(segment *meta.Segment, _ int) bool {
-				return partitionSet.Contain(segment.GetPartitionID())
+			// A segment the store no longer has counts as pending: its
+			// partition is unknown, and the segment checker releases it.
+			pending := make([]*meta.LoadedSegment, 0, len(segments))
+			ids := lo.Map(segments, func(segment *meta.LoadedSegment, _ int) int64 { return segment.GetID() })
+			i := 0
+			dist.MetaView().ForEachSegment(ids, func(_ int64, stored *datapb.SegmentInfo, ok bool) {
+				if !ok || partitionSet.Contain(stored.GetPartitionID()) {
+					pending = append(pending, segments[i])
+				}
+				i++
 			})
+			segments = pending
 		} else {
 			channels = dist.ChannelDistManager.GetByFilter(meta.WithCollectionID2Channel(collection))
 		}

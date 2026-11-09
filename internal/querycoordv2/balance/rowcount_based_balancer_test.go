@@ -109,7 +109,7 @@ func (suite *RowCountBasedBalancerTestSuite) TestBalance() {
 		segmentCnts          []int
 		states               []session.State
 		shouldMock           bool
-		distributions        map[int64][]*meta.Segment
+		distributions        map[int64][]*meta.SegmentFixture
 		distributionChannels map[int64][]*meta.DmChannel
 		expectPlans          []assign.SegmentAssignPlan
 		expectChannelPlans   []assign.ChannelAssignPlan
@@ -120,7 +120,7 @@ func (suite *RowCountBasedBalancerTestSuite) TestBalance() {
 			nodes:       []int64{1, 2},
 			segmentCnts: []int{1, 2},
 			states:      []session.State{session.NodeStateNormal, session.NodeStateNormal},
-			distributions: map[int64][]*meta.Segment{
+			distributions: map[int64][]*meta.SegmentFixture{
 				1: {{SegmentInfo: &datapb.SegmentInfo{ID: 1, CollectionID: 1, NumOfRows: 10}, Node: 1}},
 				2: {
 					{SegmentInfo: &datapb.SegmentInfo{ID: 2, CollectionID: 1, NumOfRows: 20}, Node: 2},
@@ -137,7 +137,7 @@ func (suite *RowCountBasedBalancerTestSuite) TestBalance() {
 			nodes:       []int64{1, 2},
 			segmentCnts: []int{1, 2},
 			states:      []session.State{session.NodeStateNormal, session.NodeStateNormal},
-			distributions: map[int64][]*meta.Segment{
+			distributions: map[int64][]*meta.SegmentFixture{
 				1: {{SegmentInfo: &datapb.SegmentInfo{ID: 1, CollectionID: 1, NumOfRows: 20}, Node: 1}},
 				2: {
 					{SegmentInfo: &datapb.SegmentInfo{ID: 1, CollectionID: 1, NumOfRows: 20}, Node: 2},
@@ -152,7 +152,7 @@ func (suite *RowCountBasedBalancerTestSuite) TestBalance() {
 			nodes:       []int64{1, 2, 3},
 			segmentCnts: []int{1, 2, 2},
 			states:      []session.State{session.NodeStateNormal, session.NodeStateNormal, session.NodeStateNormal},
-			distributions: map[int64][]*meta.Segment{
+			distributions: map[int64][]*meta.SegmentFixture{
 				1: {{SegmentInfo: &datapb.SegmentInfo{ID: 1, CollectionID: 1, NumOfRows: 40}, Node: 1}},
 				2: {
 					{SegmentInfo: &datapb.SegmentInfo{ID: 2, CollectionID: 1, NumOfRows: 10}, Node: 2},
@@ -172,7 +172,7 @@ func (suite *RowCountBasedBalancerTestSuite) TestBalance() {
 			segmentCnts:   []int{2, 2},
 			states:        []session.State{session.NodeStateNormal, session.NodeStateNormal},
 			shouldMock:    true,
-			distributions: map[int64][]*meta.Segment{},
+			distributions: map[int64][]*meta.SegmentFixture{},
 			distributionChannels: map[int64][]*meta.DmChannel{
 				2: {
 					{VchannelInfo: &datapb.VchannelInfo{CollectionID: 1, ChannelName: "v2"}, Node: 2, View: &meta.LeaderView{ID: 2, CollectionID: 1}},
@@ -191,7 +191,7 @@ func (suite *RowCountBasedBalancerTestSuite) TestBalance() {
 			segmentCnts:   []int{0, 0, 0},
 			states:        []session.State{session.NodeStateNormal, session.NodeStateNormal, session.NodeStateNormal},
 			shouldMock:    true,
-			distributions: map[int64][]*meta.Segment{},
+			distributions: map[int64][]*meta.SegmentFixture{},
 			distributionChannels: map[int64][]*meta.DmChannel{
 				1: {
 					{VchannelInfo: &datapb.VchannelInfo{CollectionID: 1, ChannelName: "v1"}, Node: 1, View: &meta.LeaderView{ID: 1, CollectionID: 1, Channel: "v1", Status: &querypb.LeaderViewStatus{Serviceable: true}}},
@@ -213,7 +213,7 @@ func (suite *RowCountBasedBalancerTestSuite) TestBalance() {
 			segmentCnts:   []int{0, 0, 0},
 			states:        []session.State{session.NodeStateNormal, session.NodeStateNormal, session.NodeStateNormal},
 			shouldMock:    true,
-			distributions: map[int64][]*meta.Segment{},
+			distributions: map[int64][]*meta.SegmentFixture{},
 			distributionChannels: map[int64][]*meta.DmChannel{
 				1: {
 					{VchannelInfo: &datapb.VchannelInfo{CollectionID: 1, ChannelName: "v1"}, Node: 1, View: &meta.LeaderView{ID: 1, CollectionID: 1, Channel: "v1", Status: &querypb.LeaderViewStatus{Serviceable: true}}},
@@ -235,7 +235,7 @@ func (suite *RowCountBasedBalancerTestSuite) TestBalance() {
 			notExistedNodes: []int64{10},
 			segmentCnts:     []int{1, 2},
 			states:          []session.State{session.NodeStateNormal, session.NodeStateNormal},
-			distributions: map[int64][]*meta.Segment{
+			distributions: map[int64][]*meta.SegmentFixture{
 				11: {{SegmentInfo: &datapb.SegmentInfo{ID: 1, CollectionID: 1, NumOfRows: 30}, Node: 11}},
 				22: {
 					{SegmentInfo: &datapb.SegmentInfo{ID: 2, CollectionID: 1, NumOfRows: 20}, Node: 22},
@@ -288,7 +288,7 @@ func (suite *RowCountBasedBalancerTestSuite) TestBalance() {
 			balancer.targetMgr.UpdateCollectionNextTarget(ctx, int64(1))
 			balancer.targetMgr.UpdateCollectionCurrentTarget(ctx, 1)
 			for node, s := range c.distributions {
-				balancer.dist.SegmentDistManager.Update(node, s...)
+				balancer.dist.SegmentDistManager.Update(node, meta.SeedInto(balancer.dist, s...)...)
 			}
 			for node, v := range c.distributionChannels {
 				balancer.dist.ChannelDistManager.Update(node, v...)
@@ -332,13 +332,13 @@ func (suite *RowCountBasedBalancerTestSuite) TestBalanceOnLoadingCollection() {
 	cases := []struct {
 		name          string
 		nodes         []int64
-		distributions map[int64][]*meta.Segment
+		distributions map[int64][]*meta.SegmentFixture
 		expectPlans   []assign.SegmentAssignPlan
 	}{
 		{
 			name:  "normal balance",
 			nodes: []int64{1, 2},
-			distributions: map[int64][]*meta.Segment{
+			distributions: map[int64][]*meta.SegmentFixture{
 				1: {{SegmentInfo: &datapb.SegmentInfo{ID: 1, CollectionID: 1, NumOfRows: 10}, Node: 1}},
 				2: {
 					{SegmentInfo: &datapb.SegmentInfo{ID: 2, CollectionID: 1, NumOfRows: 20}, Node: 2},
@@ -361,7 +361,7 @@ func (suite *RowCountBasedBalancerTestSuite) TestBalanceOnLoadingCollection() {
 			suite.meta.PutCollection(ctx, collection)
 			suite.meta.Put(ctx, utils.CreateTestReplica(1, 1, c.nodes))
 			for node, s := range c.distributions {
-				balancer.dist.SegmentDistManager.Update(node, s...)
+				balancer.dist.SegmentDistManager.Update(node, meta.SeedInto(balancer.dist, s...)...)
 			}
 			segmentPlans, channelPlans := suite.getCollectionBalancePlans(balancer, 1)
 			suite.Empty(channelPlans)
@@ -390,7 +390,7 @@ func (suite *RowCountBasedBalancerTestSuite) TestAssignSegmentWithGrowing() {
 	balancer := suite.balancer
 	ctx := context.Background()
 
-	distributions := map[int64][]*meta.Segment{
+	distributions := map[int64][]*meta.SegmentFixture{
 		1: {
 			{SegmentInfo: &datapb.SegmentInfo{ID: 1, NumOfRows: 20, CollectionID: 1}, Node: 1},
 		},
@@ -399,7 +399,7 @@ func (suite *RowCountBasedBalancerTestSuite) TestAssignSegmentWithGrowing() {
 		},
 	}
 	for node, s := range distributions {
-		balancer.dist.SegmentDistManager.Update(node, s...)
+		balancer.dist.SegmentDistManager.Update(node, meta.SeedInto(balancer.dist, s...)...)
 	}
 
 	for _, node := range lo.Keys(distributions) {
@@ -413,7 +413,7 @@ func (suite *RowCountBasedBalancerTestSuite) TestAssignSegmentWithGrowing() {
 		suite.balancer.nodeManager.Add(nodeInfo)
 	}
 
-	toAssign := []*meta.Segment{
+	toAssign := []*meta.SegmentFixture{
 		{SegmentInfo: &datapb.SegmentInfo{ID: 3, NumOfRows: 10, CollectionID: 1}, Node: 3},
 		{SegmentInfo: &datapb.SegmentInfo{ID: 4, NumOfRows: 10, CollectionID: 1}, Node: 3},
 	}
@@ -431,7 +431,7 @@ func (suite *RowCountBasedBalancerTestSuite) TestAssignSegmentWithGrowing() {
 			NumOfGrowingRows: 50,
 		},
 	})
-	plans := balancer.GetAssignPolicy().AssignSegment(ctx, 1, assign.SegmentRefsFromDist(toAssign), lo.Keys(distributions), false)
+	plans := balancer.GetAssignPolicy().AssignSegment(ctx, 1, fixtureRefs(toAssign), lo.Keys(distributions), false)
 	for _, p := range plans {
 		suite.Equal(int64(2), p.To)
 	}
@@ -446,7 +446,7 @@ func (suite *RowCountBasedBalancerTestSuite) TestDisableBalanceChannel() {
 		segmentCnts          []int
 		states               []session.State
 		shouldMock           bool
-		distributions        map[int64][]*meta.Segment
+		distributions        map[int64][]*meta.SegmentFixture
 		distributionChannels map[int64][]*meta.DmChannel
 		expectPlans          []assign.SegmentAssignPlan
 		expectChannelPlans   []assign.ChannelAssignPlan
@@ -459,7 +459,7 @@ func (suite *RowCountBasedBalancerTestSuite) TestDisableBalanceChannel() {
 			segmentCnts:   []int{2, 2},
 			states:        []session.State{session.NodeStateNormal, session.NodeStateNormal},
 			shouldMock:    true,
-			distributions: map[int64][]*meta.Segment{},
+			distributions: map[int64][]*meta.SegmentFixture{},
 			distributionChannels: map[int64][]*meta.DmChannel{
 				2: {
 					{VchannelInfo: &datapb.VchannelInfo{CollectionID: 1, ChannelName: "v2"}, Node: 2, View: &meta.LeaderView{ID: 2, CollectionID: 1}},
@@ -484,7 +484,7 @@ func (suite *RowCountBasedBalancerTestSuite) TestDisableBalanceChannel() {
 			segmentCnts:   []int{2, 2},
 			states:        []session.State{session.NodeStateNormal, session.NodeStateNormal},
 			shouldMock:    true,
-			distributions: map[int64][]*meta.Segment{},
+			distributions: map[int64][]*meta.SegmentFixture{},
 			distributionChannels: map[int64][]*meta.DmChannel{
 				2: {
 					{VchannelInfo: &datapb.VchannelInfo{CollectionID: 1, ChannelName: "v2"}, Node: 2, View: &meta.LeaderView{ID: 2, CollectionID: 1}},
@@ -538,7 +538,7 @@ func (suite *RowCountBasedBalancerTestSuite) TestDisableBalanceChannel() {
 			balancer.targetMgr.UpdateCollectionNextTarget(ctx, int64(1))
 			balancer.targetMgr.UpdateCollectionCurrentTarget(ctx, 1)
 			for node, s := range c.distributions {
-				balancer.dist.SegmentDistManager.Update(node, s...)
+				balancer.dist.SegmentDistManager.Update(node, meta.SeedInto(balancer.dist, s...)...)
 			}
 			for node, v := range c.distributionChannels {
 				balancer.dist.ChannelDistManager.Update(node, v...)
@@ -589,7 +589,7 @@ func (suite *RowCountBasedBalancerTestSuite) TestMultiReplicaBalance() {
 		channels           []*datapb.VchannelInfo
 		states             []session.State
 		shouldMock         bool
-		segmentDist        map[int64][]*meta.Segment
+		segmentDist        map[int64][]*meta.SegmentFixture
 		channelDist        map[int64][]*meta.DmChannel
 		expectPlans        []assign.SegmentAssignPlan
 		expectChannelPlans []assign.ChannelAssignPlan
@@ -619,7 +619,7 @@ func (suite *RowCountBasedBalancerTestSuite) TestMultiReplicaBalance() {
 				},
 			},
 			states: []session.State{session.NodeStateNormal, session.NodeStateNormal},
-			segmentDist: map[int64][]*meta.Segment{
+			segmentDist: map[int64][]*meta.SegmentFixture{
 				1: {
 					{SegmentInfo: &datapb.SegmentInfo{ID: 1, CollectionID: 1, NumOfRows: 30}, Node: 1},
 					{SegmentInfo: &datapb.SegmentInfo{ID: 2, CollectionID: 1, NumOfRows: 30}, Node: 1},
@@ -666,7 +666,7 @@ func (suite *RowCountBasedBalancerTestSuite) TestMultiReplicaBalance() {
 
 			// 2. set up target for distribution for multi collections
 			for node, s := range c.segmentDist {
-				balancer.dist.SegmentDistManager.Update(node, s...)
+				balancer.dist.SegmentDistManager.Update(node, meta.SeedInto(balancer.dist, s...)...)
 			}
 			for node, v := range c.channelDist {
 				balancer.dist.ChannelDistManager.Update(node, v...)

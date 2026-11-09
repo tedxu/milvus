@@ -24,10 +24,8 @@ import (
 	"github.com/stretchr/testify/suite"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
 	"github.com/milvus-io/milvus/internal/metacache/metacachetest"
 	"github.com/milvus-io/milvus/internal/metastore/model"
-	"github.com/milvus-io/milvus/pkg/v3/proto/datapb"
 	"github.com/milvus-io/milvus/pkg/v3/proto/querypb"
 	"github.com/milvus-io/milvus/pkg/v3/util/metricsinfo"
 )
@@ -38,14 +36,14 @@ type SegmentDistManagerSuite struct {
 	collection int64
 	partitions []int64
 	nodes      []int64
-	segments   map[int64]*Segment
+	segments   map[int64]*LoadedSegment
 }
 
 type countingSegmentDistFilter struct {
 	count *int
 }
 
-func (f countingSegmentDistFilter) Match(*Segment) bool {
+func (f countingSegmentDistFilter) Match(*LoadedSegment) bool {
 	*f.count++
 	return true
 }
@@ -63,31 +61,11 @@ func (suite *SegmentDistManagerSuite) SetupSuite() {
 	suite.collection = 10
 	suite.partitions = []int64{1, 2}
 	suite.nodes = []int64{0, 1, 2}
-	suite.segments = map[int64]*Segment{
-		1: SegmentFromInfo(&datapb.SegmentInfo{
-			ID:            1,
-			CollectionID:  suite.collection,
-			PartitionID:   suite.partitions[0],
-			InsertChannel: "dmc0",
-		}),
-		2: SegmentFromInfo(&datapb.SegmentInfo{
-			ID:            2,
-			CollectionID:  suite.collection,
-			PartitionID:   suite.partitions[0],
-			InsertChannel: "dmc1",
-		}),
-		3: SegmentFromInfo(&datapb.SegmentInfo{
-			ID:            3,
-			CollectionID:  suite.collection,
-			PartitionID:   suite.partitions[1],
-			InsertChannel: "dmc0",
-		}),
-		4: SegmentFromInfo(&datapb.SegmentInfo{
-			ID:            4,
-			CollectionID:  suite.collection,
-			PartitionID:   suite.partitions[1],
-			InsertChannel: "dmc1",
-		}),
+	suite.segments = map[int64]*LoadedSegment{
+		1: &LoadedSegment{ID: 1, CollectionID: suite.collection, Channel: "dmc0"},
+		2: &LoadedSegment{ID: 2, CollectionID: suite.collection, Channel: "dmc1"},
+		3: &LoadedSegment{ID: 3, CollectionID: suite.collection, Channel: "dmc0"},
+		4: &LoadedSegment{ID: 4, CollectionID: suite.collection, Channel: "dmc1"},
 	}
 }
 
@@ -97,13 +75,13 @@ func (suite *SegmentDistManagerSuite) SetupTest() {
 	// node 0 contains channel segment 1, 2
 	// node 1 contains channel segment 1, 2, 3, 4
 	// node 2 contains channel segment 3, 4
-	suite.dist.Update(suite.nodes[0], suite.segments[1].Clone(), suite.segments[2].Clone())
+	suite.dist.Update(suite.nodes[0], cloneLoaded(suite.segments[1]), cloneLoaded(suite.segments[2]))
 	suite.dist.Update(suite.nodes[1],
-		suite.segments[1].Clone(),
-		suite.segments[2].Clone(),
-		suite.segments[3].Clone(),
-		suite.segments[4].Clone())
-	suite.dist.Update(suite.nodes[2], suite.segments[3].Clone(), suite.segments[4].Clone())
+		cloneLoaded(suite.segments[1]),
+		cloneLoaded(suite.segments[2]),
+		cloneLoaded(suite.segments[3]),
+		cloneLoaded(suite.segments[4]))
+	suite.dist.Update(suite.nodes[2], cloneLoaded(suite.segments[3]), cloneLoaded(suite.segments[4]))
 }
 
 func (suite *SegmentDistManagerSuite) TestVersion() {
@@ -111,7 +89,7 @@ func (suite *SegmentDistManagerSuite) TestVersion() {
 	v1 := dist.GetVersion()
 
 	// Update with some new data
-	dist.Update(suite.nodes[0], suite.segments[1].Clone(), suite.segments[2].Clone(), suite.segments[3].Clone())
+	dist.Update(suite.nodes[0], cloneLoaded(suite.segments[1]), cloneLoaded(suite.segments[2]), cloneLoaded(suite.segments[3]))
 	v2 := dist.GetVersion()
 	suite.Greater(v2, v1)
 }
@@ -148,16 +126,11 @@ func (suite *SegmentDistManagerSuite) TestPatch() {
 		suite.SetupTest()
 		dist := suite.dist
 		v1 := dist.GetVersion()
-		replaced := suite.segments[1].Clone()
-		replaced.PartitionID = suite.partitions[1]
-		added := SegmentFromInfo(&datapb.SegmentInfo{
-			ID:            5,
-			CollectionID:  suite.collection,
-			PartitionID:   suite.partitions[0],
-			InsertChannel: "dmc2",
-		})
+		replaced := cloneLoaded(suite.segments[1])
+		replaced.Version = 7
+		added := &LoadedSegment{ID: 5, CollectionID: suite.collection, Channel: "dmc2"}
 
-		dist.Patch(suite.nodes[0], []*Segment{replaced, added}, nil)
+		dist.Patch(suite.nodes[0], []*LoadedSegment{replaced, added}, nil)
 
 		v2 := dist.GetVersion()
 		segments := dist.GetByFilter(WithNodeID(suite.nodes[0]))
@@ -167,7 +140,7 @@ func (suite *SegmentDistManagerSuite) TestPatch() {
 		suite.AssertNode(segments, suite.nodes[0])
 		segment1 := dist.GetByFilter(WithNodeID(suite.nodes[0]), WithSegmentID(1))
 		suite.Require().Len(segment1, 1)
-		suite.Equal(suite.partitions[1], segment1[0].GetPartitionID())
+		suite.Equal(int64(7), segment1[0].Version)
 		segment5 := dist.GetByFilter(WithNodeID(suite.nodes[0]), WithSegmentID(5))
 		suite.Require().Len(segment5, 1)
 		suite.Equal("dmc2", segment5[0].GetInsertChannel())
@@ -270,7 +243,7 @@ func (suite *SegmentDistManagerSuite) TestGetBySegmentIDUsesIndex() {
 	suite.Equal(2, visited)
 }
 
-func (suite *SegmentDistManagerSuite) AssertIDs(segments []*Segment, ids ...int64) bool {
+func (suite *SegmentDistManagerSuite) AssertIDs(segments []*LoadedSegment, ids ...int64) bool {
 	for _, segment := range segments {
 		hasSegment := false
 		for _, id := range ids {
@@ -286,7 +259,7 @@ func (suite *SegmentDistManagerSuite) AssertIDs(segments []*Segment, ids ...int6
 	return true
 }
 
-func (suite *SegmentDistManagerSuite) AssertNode(segments []*Segment, node int64) bool {
+func (suite *SegmentDistManagerSuite) AssertNode(segments []*LoadedSegment, node int64) bool {
 	for _, segment := range segments {
 		if !suite.Equal(node, segment.Node) {
 			return false
@@ -295,7 +268,7 @@ func (suite *SegmentDistManagerSuite) AssertNode(segments []*Segment, node int64
 	return true
 }
 
-func (suite *SegmentDistManagerSuite) AssertCollection(segments []*Segment, collection int64) bool {
+func (suite *SegmentDistManagerSuite) AssertCollection(segments []*LoadedSegment, collection int64) bool {
 	for _, segment := range segments {
 		if !suite.Equal(collection, segment.GetCollectionID()) {
 			return false
@@ -304,7 +277,7 @@ func (suite *SegmentDistManagerSuite) AssertCollection(segments []*Segment, coll
 	return true
 }
 
-func (suite *SegmentDistManagerSuite) AssertShard(segments []*Segment, shard string) bool {
+func (suite *SegmentDistManagerSuite) AssertShard(segments []*LoadedSegment, shard string) bool {
 	for _, segment := range segments {
 		if !suite.Equal(shard, segment.GetInsertChannel()) {
 			return false
@@ -322,25 +295,11 @@ func TestGetSegmentDistJSON(t *testing.T) {
 	manager := NewSegmentDistManager()
 
 	// Add some segments to the SegmentDistManager
-	segment1 := SegmentFromInfo(&datapb.SegmentInfo{
-		ID:            1,
-		CollectionID:  100,
-		PartitionID:   10,
-		InsertChannel: "channel-1",
-		NumOfRows:     1000,
-		State:         commonpb.SegmentState_Flushed,
-	})
+	segment1 := &LoadedSegment{ID: 1, CollectionID: 100, Channel: "channel-1"}
 	segment1.Node = 1
 	segment1.Version = 1
 
-	segment2 := SegmentFromInfo(&datapb.SegmentInfo{
-		ID:            2,
-		CollectionID:  200,
-		PartitionID:   20,
-		InsertChannel: "channel-2",
-		NumOfRows:     2000,
-		State:         commonpb.SegmentState_Flushed,
-	})
+	segment2 := &LoadedSegment{ID: 2, CollectionID: 200, Channel: "channel-2"}
 	segment2.Node = 2
 	segment2.Version = 1
 
@@ -382,7 +341,7 @@ func TestGetSegmentDistReadsIndexFromStore(t *testing.T) {
 	store.PutSegmentIndexes(&model.SegmentIndex{CollectionID: 100, SegmentID: 1, IndexID: 7, BuildID: 70, IndexMemSize: 4096})
 
 	manager := NewSegmentDistManager()
-	segment := SegmentFromInfo(&datapb.SegmentInfo{ID: 1, CollectionID: 100, InsertChannel: "ch"})
+	segment := &LoadedSegment{ID: 1, CollectionID: 100, Channel: "ch"}
 	segment.IndexBuilds = map[int64]int64{7: 70, 8: 80}
 	manager.Update(1, segment)
 
@@ -449,4 +408,9 @@ func TestLoadedFieldIndexInfos(t *testing.T) {
 			}
 		})
 	}
+}
+
+func cloneLoaded(s *LoadedSegment) *LoadedSegment {
+	c := *s
+	return &c
 }

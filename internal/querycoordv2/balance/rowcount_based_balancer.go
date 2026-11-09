@@ -104,19 +104,19 @@ func (b *RowCountBasedBalancer) balanceSegments(ctx context.Context, br *balance
 // It identifies nodes with row count above average and moves segments from them
 // to nodes with row count below average.
 func (b *RowCountBasedBalancer) genSegmentPlan(ctx context.Context, replica *meta.Replica, rwNodes []int64) []assign.SegmentAssignPlan {
-	segmentsToMove := make([]*meta.Segment, 0)
+	segmentsToMove := make([]assign.SegmentRef, 0)
 
 	nodeRowCount := make(map[int64]int, 0)
-	segmentDist := make(map[int64][]*meta.Segment)
+	segmentDist := make(map[int64][]assign.SegmentRef)
 	totalRowCount := 0
 	for _, node := range rwNodes {
 		dist := b.dist.SegmentDistManager.GetByFilter(meta.WithCollectionID(replica.GetCollectionID()), meta.WithNodeID(node))
-		segments := lo.Filter(dist, func(segment *meta.Segment, _ int) bool {
+		segments := assign.SegmentRefsFromDist(b.dist.MetaView(), lo.Filter(dist, func(segment *meta.LoadedSegment, _ int) bool {
 			return b.targetMgr.CanSegmentBeMoved(ctx, segment.GetCollectionID(), segment.GetID())
-		})
+		}))
 		rowCount := 0
 		for _, s := range segments {
-			rowCount += int(s.GetNumOfRows())
+			rowCount += int(s.NumOfRows)
 		}
 		totalRowCount += rowCount
 		segmentDist[node] = segments
@@ -132,7 +132,7 @@ func (b *RowCountBasedBalancer) genSegmentPlan(ctx context.Context, replica *met
 	nodesWithLessRow := make([]int64, 0)
 	for node, segments := range segmentDist {
 		sort.Slice(segments, func(i, j int) bool {
-			return segments[i].GetNumOfRows() < segments[j].GetNumOfRows()
+			return segments[i].NumOfRows < segments[j].NumOfRows
 		})
 
 		leftRowCount := nodeRowCount[node]
@@ -142,7 +142,7 @@ func (b *RowCountBasedBalancer) genSegmentPlan(ctx context.Context, replica *met
 		}
 
 		for _, s := range segments {
-			leftRowCount -= int(s.GetNumOfRows())
+			leftRowCount -= int(s.NumOfRows)
 			if leftRowCount < average {
 				break
 			}
@@ -150,16 +150,16 @@ func (b *RowCountBasedBalancer) genSegmentPlan(ctx context.Context, replica *met
 		}
 	}
 
-	segmentsToMove = lo.Filter(segmentsToMove, func(s *meta.Segment, _ int) bool {
+	segmentsToMove = lo.Filter(segmentsToMove, func(s assign.SegmentRef, _ int) bool {
 		// if the segment are redundant, skip it's balance for now
-		return len(b.dist.SegmentDistManager.GetByFilter(meta.WithReplica(replica), meta.WithSegmentID(s.GetID()))) == 1
+		return len(b.dist.SegmentDistManager.GetByFilter(meta.WithReplica(replica), meta.WithSegmentID(s.ID))) == 1
 	})
 
 	if len(nodesWithLessRow) == 0 || len(segmentsToMove) == 0 {
 		return nil
 	}
 
-	segmentPlans := b.assignPolicy.AssignSegment(ctx, replica.GetCollectionID(), assign.SegmentRefsFromDist(segmentsToMove), nodesWithLessRow, false)
+	segmentPlans := b.assignPolicy.AssignSegment(ctx, replica.GetCollectionID(), segmentsToMove, nodesWithLessRow, false)
 	for i := range segmentPlans {
 		segmentPlans[i].From = segmentPlans[i].Segment.From
 		segmentPlans[i].Replica = replica

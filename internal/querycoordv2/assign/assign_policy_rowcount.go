@@ -65,8 +65,9 @@ func (p *RowCountBasedAssignPolicy) getWorkloadStatus() *rowcountWorkloadStatus 
 	}
 
 	allSegments := p.dist.SegmentDistManager.GetByFilter()
-	for _, s := range allSegments {
-		status.nodeGlobalRowCount[s.Node] += int(s.GetNumOfRows())
+	rows := distRowCounts(p.dist.MetaView(), allSegments)
+	for i, s := range allSegments {
+		status.nodeGlobalRowCount[s.Node] += int(rows[i])
 	}
 
 	allChannels := p.dist.ChannelDistManager.GetByFilter()

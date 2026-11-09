@@ -72,13 +72,14 @@ func (p *ScoreBasedAssignPolicy) getWorkloadStatus() *workloadStatus {
 	}
 
 	allSegments := p.dist.SegmentDistManager.GetByFilter()
-	for _, s := range allSegments {
-		status.nodeGlobalRowCount[s.Node] += int(s.GetNumOfRows())
+	rows := distRowCounts(p.dist.MetaView(), allSegments)
+	for i, s := range allSegments {
+		status.nodeGlobalRowCount[s.Node] += int(rows[i])
 		collectionID := s.GetCollectionID()
 		if status.nodeCollectionRowCount[s.Node] == nil {
 			status.nodeCollectionRowCount[s.Node] = make(map[int64]int)
 		}
-		status.nodeCollectionRowCount[s.Node][collectionID] += int(s.GetNumOfRows())
+		status.nodeCollectionRowCount[s.Node][collectionID] += int(rows[i])
 	}
 
 	allChannels := p.dist.ChannelDistManager.GetByFilter()

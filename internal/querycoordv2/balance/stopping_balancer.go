@@ -166,7 +166,7 @@ func (b *StoppingBalancer) genSegmentPlan(ctx context.Context, br *balanceReport
 		)
 
 		// Filter out segments that cannot be moved
-		segments := lo.Filter(dist, func(segment *meta.Segment, _ int) bool {
+		segments := lo.Filter(dist, func(segment *meta.LoadedSegment, _ int) bool {
 			return b.targetMgr.CanSegmentBeMoved(ctx, segment.GetCollectionID(), segment.GetID())
 		})
 
@@ -185,7 +185,7 @@ func (b *StoppingBalancer) genSegmentPlan(ctx context.Context, br *balanceReport
 		br.AddRecord(StrRecordf("found %d movable segments on stopping node %d to be reassigned", len(segments), nodeID))
 
 		// Assign these segments to active nodes
-		plans := b.assignPolicy.AssignSegment(ctx, replica.GetCollectionID(), assign.SegmentRefsFromDist(segments), rwNodes, false)
+		plans := b.assignPolicy.AssignSegment(ctx, replica.GetCollectionID(), assign.SegmentRefsFromDist(b.dist.MetaView(), segments), rwNodes, false)
 
 		// Set the source node and replica for each plan
 		for i := range plans {

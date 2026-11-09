@@ -65,21 +65,6 @@ func GroupPartitionsByCollection(partitions []*meta.Partition) map[int64][]*meta
 	return ret
 }
 
-// GroupSegmentsByReplica groups segments by replica,
-// returns ReplicaID -> Segments
-func GroupSegmentsByReplica(ctx context.Context, replicaMgr *meta.ReplicaManager, collectionID int64, segments []*meta.Segment) map[int64][]*meta.Segment {
-	ret := make(map[int64][]*meta.Segment)
-	replicas := replicaMgr.GetByCollection(ctx, collectionID)
-	for _, replica := range replicas {
-		for _, segment := range segments {
-			if replica.Contains(segment.Node) {
-				ret[replica.GetID()] = append(ret[replica.GetID()], segment)
-			}
-		}
-	}
-	return ret
-}
-
 // RecoverReplicaOfCollection recovers all replica of collection with latest resource group.
 func RecoverReplicaOfCollection(ctx context.Context, m *meta.Meta, collectionID typeutil.UniqueID) {
 	logger := mlog.With(mlog.FieldCollectionID(collectionID))

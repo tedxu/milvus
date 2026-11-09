@@ -36,11 +36,11 @@ var workloadBenchEntries = []int{100000, 1000000}
 func newWorkloadBenchDist(entries int) *meta.DistributionManager {
 	const nodes, collections = 100, 10
 	dist := meta.NewDistributionManager(session.NewNodeManager())
-	byNode := make(map[int64][]*meta.Segment, nodes)
+	byNode := make(map[int64][]*meta.SegmentFixture, nodes)
 	for i := 0; i < entries; i++ {
 		node := int64(i%nodes) + 1
 		collection := int64(i%collections) + 1
-		byNode[node] = append(byNode[node], &meta.Segment{
+		byNode[node] = append(byNode[node], &meta.SegmentFixture{
 			SegmentInfo: &datapb.SegmentInfo{
 				ID:            int64(i) + 1,
 				CollectionID:  collection,
@@ -52,7 +52,7 @@ func newWorkloadBenchDist(entries int) *meta.DistributionManager {
 		})
 	}
 	for node, segments := range byNode {
-		dist.SegmentDistManager.Update(node, segments...)
+		dist.SegmentDistManager.Update(node, meta.SeedInto(dist, segments...)...)
 	}
 	return dist
 }

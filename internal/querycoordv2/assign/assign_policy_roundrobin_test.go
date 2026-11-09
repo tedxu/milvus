@@ -54,9 +54,9 @@ func TestRoundRobinAssignPolicy_AssignSegment_EvenDistribution(t *testing.T) {
 	policy := newRoundRobinAssignPolicy(nodeManager, mockScheduler, nil)
 
 	// Create 9 segments (should be distributed 3 per node)
-	segments := make([]*meta.Segment, 9)
+	segments := make([]*meta.SegmentFixture, 9)
 	for i := 0; i < 9; i++ {
-		segments[i] = &meta.Segment{
+		segments[i] = &meta.SegmentFixture{
 			SegmentInfo: &datapb.SegmentInfo{
 				ID:        int64(i + 1),
 				NumOfRows: 1000,
@@ -65,7 +65,7 @@ func TestRoundRobinAssignPolicy_AssignSegment_EvenDistribution(t *testing.T) {
 	}
 
 	nodes := []int64{1, 2, 3}
-	plans := policy.AssignSegment(context.Background(), 100, SegmentRefsFromDist(segments), nodes, false)
+	plans := policy.AssignSegment(context.Background(), 100, refsOf(segments), nodes, false)
 
 	assert.NotNil(t, plans)
 	assert.Equal(t, 9, len(plans))
@@ -101,11 +101,11 @@ func TestRoundRobinAssignPolicy_AssignSegment_SortBySegmentCountOnly(t *testing.
 	nodeManager.Get(2).UpdateStats(session.WithSegmentCnt(1))
 
 	policy := newRoundRobinAssignPolicy(nodeManager, mockScheduler, nil)
-	segments := []*meta.Segment{
+	segments := []*meta.SegmentFixture{
 		{SegmentInfo: &datapb.SegmentInfo{ID: 1, NumOfRows: 1000}},
 	}
 
-	plans := policy.AssignSegment(context.Background(), 100, SegmentRefsFromDist(segments), []int64{1, 2}, false)
+	plans := policy.AssignSegment(context.Background(), 100, refsOf(segments), []int64{1, 2}, false)
 
 	assert.Len(t, plans, 1)
 	assert.Equal(t, int64(2), plans[0].To)
@@ -126,10 +126,10 @@ func TestRoundRobinAssignPolicy_AssignSegment_EmptySegments(t *testing.T) {
 
 	policy := newRoundRobinAssignPolicy(nodeManager, mockScheduler, nil)
 
-	segments := []*meta.Segment{}
+	segments := []*meta.SegmentFixture{}
 	nodes := []int64{1}
 
-	plans := policy.AssignSegment(context.Background(), 100, SegmentRefsFromDist(segments), nodes, false)
+	plans := policy.AssignSegment(context.Background(), 100, refsOf(segments), nodes, false)
 
 	assert.NotNil(t, plans)
 	assert.Equal(t, 0, len(plans))
@@ -143,12 +143,12 @@ func TestRoundRobinAssignPolicy_AssignSegment_EmptyNodes(t *testing.T) {
 	nodeManager := session.NewNodeManager()
 	policy := newRoundRobinAssignPolicy(nodeManager, mockScheduler, nil)
 
-	segments := []*meta.Segment{
+	segments := []*meta.SegmentFixture{
 		{SegmentInfo: &datapb.SegmentInfo{ID: 1, NumOfRows: 1000}},
 	}
 	nodes := []int64{}
 
-	plans := policy.AssignSegment(context.Background(), 100, SegmentRefsFromDist(segments), nodes, false)
+	plans := policy.AssignSegment(context.Background(), 100, refsOf(segments), nodes, false)
 
 	assert.Nil(t, plans)
 }
@@ -172,17 +172,17 @@ func TestRoundRobinAssignPolicy_AssignSegment_AllNodesNotNormal(t *testing.T) {
 
 	policy := newRoundRobinAssignPolicy(nodeManager, mockScheduler, nil)
 
-	segments := []*meta.Segment{
+	segments := []*meta.SegmentFixture{
 		{SegmentInfo: &datapb.SegmentInfo{ID: 1, NumOfRows: 1000}},
 	}
 	nodes := []int64{1, 2}
 
 	// Without force assign, should return nil
-	plans := policy.AssignSegment(context.Background(), 100, SegmentRefsFromDist(segments), nodes, false)
+	plans := policy.AssignSegment(context.Background(), 100, refsOf(segments), nodes, false)
 	assert.Nil(t, plans)
 
 	// With force assign, should proceed
-	plansForced := policy.AssignSegment(context.Background(), 100, SegmentRefsFromDist(segments), nodes, true)
+	plansForced := policy.AssignSegment(context.Background(), 100, refsOf(segments), nodes, true)
 	assert.NotNil(t, plansForced)
 	assert.Equal(t, 1, len(plansForced))
 }
@@ -206,9 +206,9 @@ func TestRoundRobinAssignPolicy_AssignSegment_BatchLimitOnlyForBalance(t *testin
 	}
 
 	policy := newRoundRobinAssignPolicy(nodeManager, mockScheduler, nil)
-	segments := make([]*meta.Segment, 5)
+	segments := make([]*meta.SegmentFixture, 5)
 	for i := range segments {
-		segments[i] = &meta.Segment{
+		segments[i] = &meta.SegmentFixture{
 			SegmentInfo: &datapb.SegmentInfo{
 				ID:        int64(i + 1),
 				NumOfRows: 1000,
@@ -217,17 +217,17 @@ func TestRoundRobinAssignPolicy_AssignSegment_BatchLimitOnlyForBalance(t *testin
 	}
 
 	nodes := []int64{1, 2}
-	balancePlans := policy.AssignSegment(context.Background(), 100, SegmentRefsFromDist(segments), nodes, false)
+	balancePlans := policy.AssignSegment(context.Background(), 100, refsOf(segments), nodes, false)
 	assert.Equal(t, 2, len(balancePlans))
 
 	for i := int64(1); i <= 2; i++ {
 		nodeManager.Get(i).SetState(session.NodeStateStopping)
 	}
 
-	balancePlans = policy.AssignSegment(context.Background(), 100, SegmentRefsFromDist(segments), nodes, false)
+	balancePlans = policy.AssignSegment(context.Background(), 100, refsOf(segments), nodes, false)
 	assert.Nil(t, balancePlans)
 
-	forcePlans := policy.AssignSegment(context.Background(), 100, SegmentRefsFromDist(segments), nodes, true)
+	forcePlans := policy.AssignSegment(context.Background(), 100, refsOf(segments), nodes, true)
 	assert.Equal(t, 5, len(forcePlans))
 }
 
@@ -247,9 +247,9 @@ func TestRoundRobinAssignPolicy_AssignSegment_SingleNode(t *testing.T) {
 	policy := newRoundRobinAssignPolicy(nodeManager, mockScheduler, nil)
 
 	// Create 5 segments
-	segments := make([]*meta.Segment, 5)
+	segments := make([]*meta.SegmentFixture, 5)
 	for i := 0; i < 5; i++ {
-		segments[i] = &meta.Segment{
+		segments[i] = &meta.SegmentFixture{
 			SegmentInfo: &datapb.SegmentInfo{
 				ID:        int64(i + 1),
 				NumOfRows: 1000,
@@ -258,7 +258,7 @@ func TestRoundRobinAssignPolicy_AssignSegment_SingleNode(t *testing.T) {
 	}
 
 	nodes := []int64{1}
-	plans := policy.AssignSegment(context.Background(), 100, SegmentRefsFromDist(segments), nodes, false)
+	plans := policy.AssignSegment(context.Background(), 100, refsOf(segments), nodes, false)
 
 	assert.NotNil(t, plans)
 	assert.Equal(t, 5, len(plans))

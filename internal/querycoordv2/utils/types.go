@@ -32,22 +32,27 @@ import (
 )
 
 // MergeMetaSegmentIntoSegmentInfo fills info from the distribution entries
-// of one segment. Index fields are read from view.
-func MergeMetaSegmentIntoSegmentInfo(view metacache.MetaView, info *querypb.SegmentInfo, segments ...*meta.Segment) {
+// of one segment. Segment and index fields are read from view; on a store
+// miss only the record's identity and nodes are filled.
+func MergeMetaSegmentIntoSegmentInfo(view metacache.MetaView, info *querypb.SegmentInfo, segments ...*meta.LoadedSegment) {
 	first := segments[0]
 	if info.GetSegmentID() == 0 {
+		stored, ok := view.GetSegment(first.GetID())
+		if !ok {
+			stored = &datapb.SegmentInfo{ID: first.GetID(), CollectionID: first.GetCollectionID(), InsertChannel: first.GetInsertChannel()}
+		}
 		*info = querypb.SegmentInfo{
 			NodeID:       paramtable.GetNodeID(),
 			SegmentID:    first.GetID(),
 			CollectionID: first.GetCollectionID(),
-			PartitionID:  first.GetPartitionID(),
-			NumRows:      first.GetNumOfRows(),
+			PartitionID:  stored.GetPartitionID(),
+			NumRows:      stored.GetNumOfRows(),
 			DmChannel:    first.GetInsertChannel(),
 			NodeIds:      make([]int64, 0),
 			SegmentState: commonpb.SegmentState_Sealed,
 			IndexInfos:   make([]*querypb.FieldIndexInfo, 0),
-			Level:        first.Level,
-			IsSorted:     first.GetIsSorted(),
+			Level:        stored.GetLevel(),
+			IsSorted:     stored.GetIsSorted(),
 		}
 		for _, indexInfo := range meta.LoadedFieldIndexInfos(view, first.GetCollectionID(), first.GetID(), first.IndexBuilds) {
 			info.IndexName = indexInfo.IndexName

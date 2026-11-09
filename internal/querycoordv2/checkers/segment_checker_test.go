@@ -83,7 +83,7 @@ func (suite *SegmentCheckerTestSuite) SetupTest() {
 	suite.nodeMgr = session.NewNodeManager()
 	suite.metaStore = metacache.NewMetaStore(nil)
 	suite.meta = meta.NewMeta(idAllocator, store, suite.nodeMgr, suite.metaStore)
-	distManager := meta.NewDistributionManager(suite.nodeMgr)
+	distManager := meta.NewDistributionManager(suite.nodeMgr, meta.WithMetaView(suite.metaStore))
 	suite.broker = meta.NewMockBroker(suite.T())
 	targetManager := meta.NewTargetManager(suite.broker, suite.meta, suite.metaStore)
 
@@ -257,7 +257,7 @@ func (suite *SegmentCheckerTestSuite) TestReleaseSegments() {
 	checker.targetMgr.UpdateCollectionNextTarget(ctx, int64(1))
 
 	// set dist
-	checker.dist.SegmentDistManager.Update(1, utils.CreateTestSegment(1, 1, 2, 1, 1, "test-insert-channel"))
+	checker.dist.SegmentDistManager.Update(1, meta.SeedInto(checker.dist, utils.CreateTestSegment(1, 1, 2, 1, 1, "test-insert-channel"))...)
 	checker.dist.ChannelDistManager.Update(2, &meta.DmChannel{
 		VchannelInfo: &datapb.VchannelInfo{
 			CollectionID: 1,
@@ -313,8 +313,8 @@ func (suite *SegmentCheckerTestSuite) TestReleaseRepeatedSegments() {
 	checker.targetMgr.UpdateCollectionNextTarget(ctx, int64(1))
 
 	// set dist
-	checker.dist.SegmentDistManager.Update(1, utils.CreateTestSegment(1, 1, 1, 1, 1, "test-insert-channel"))
-	checker.dist.SegmentDistManager.Update(2, utils.CreateTestSegment(1, 1, 1, 1, 2, "test-insert-channel"))
+	checker.dist.SegmentDistManager.Update(1, meta.SeedInto(checker.dist, utils.CreateTestSegment(1, 1, 1, 1, 1, "test-insert-channel"))...)
+	checker.dist.SegmentDistManager.Update(2, meta.SeedInto(checker.dist, utils.CreateTestSegment(1, 1, 1, 1, 2, "test-insert-channel"))...)
 	checker.dist.ChannelDistManager.Update(2, &meta.DmChannel{
 		VchannelInfo: &datapb.VchannelInfo{
 			CollectionID: 1,
@@ -396,7 +396,7 @@ func (suite *SegmentCheckerTestSuite) TestReleaseDirtySegments() {
 	checker.targetMgr.UpdateCollectionNextTarget(ctx, int64(1))
 
 	// set dist
-	checker.dist.SegmentDistManager.Update(2, utils.CreateTestSegment(1, 1, 1, 1, 1, "test-insert-channel"))
+	checker.dist.SegmentDistManager.Update(2, meta.SeedInto(checker.dist, utils.CreateTestSegment(1, 1, 1, 1, 1, "test-insert-channel"))...)
 	checker.dist.ChannelDistManager.Update(2, &meta.DmChannel{
 		VchannelInfo: &datapb.VchannelInfo{
 			CollectionID: 1,
@@ -456,7 +456,7 @@ func (suite *SegmentCheckerTestSuite) TestReleaseGrowingSegments() {
 	growingSegments[3] = &msgpb.MsgPosition{Timestamp: 3}
 	growingSegments[4] = &msgpb.MsgPosition{Timestamp: 11}
 
-	checker.dist.SegmentDistManager.Update(2, utils.CreateTestSegment(1, 1, 3, 2, 2, "test-insert-channel"))
+	checker.dist.SegmentDistManager.Update(2, meta.SeedInto(checker.dist, utils.CreateTestSegment(1, 1, 3, 2, 2, "test-insert-channel"))...)
 	checker.dist.ChannelDistManager.Update(2, &meta.DmChannel{
 		VchannelInfo: &datapb.VchannelInfo{
 			CollectionID:        1,
@@ -540,7 +540,7 @@ func (suite *SegmentCheckerTestSuite) TestReleaseCompactedGrowingSegments() {
 	// segment start pos after chekcpoint
 	growingSegments[4] = &msgpb.MsgPosition{Timestamp: 11}
 
-	checker.dist.SegmentDistManager.Update(2, utils.CreateTestSegment(1, 1, 3, 2, 2, "test-insert-channel"))
+	checker.dist.SegmentDistManager.Update(2, meta.SeedInto(checker.dist, utils.CreateTestSegment(1, 1, 3, 2, 2, "test-insert-channel"))...)
 	checker.dist.ChannelDistManager.Update(2, &meta.DmChannel{
 		VchannelInfo: &datapb.VchannelInfo{
 			CollectionID:        1,
@@ -666,7 +666,7 @@ func (suite *SegmentCheckerTestSuite) TestSkipReleaseGrowingSegments() {
 
 func (suite *SegmentCheckerTestSuite) TestReleaseDroppedSegments() {
 	checker := suite.checker
-	checker.dist.SegmentDistManager.Update(1, utils.CreateTestSegment(1, 1, 1, 1, 1, "test-insert-channel"))
+	checker.dist.SegmentDistManager.Update(1, meta.SeedInto(checker.dist, utils.CreateTestSegment(1, 1, 1, 1, 1, "test-insert-channel"))...)
 
 	// Mock scheduler.Add() for any replica-related tasks (not expected in this test)
 	suite.scheduler.EXPECT().Add(mock.Anything).Return(nil).Maybe()
@@ -1016,7 +1016,7 @@ func (suite *SegmentCheckerTestSuite) TestFilterOutExistedOnLeader() {
 	replica := utils.CreateTestReplica(1, collectionID, []int64{nodeID1, nodeID2})
 
 	// Create test segments
-	segments := []*meta.Segment{
+	segments := []*meta.SegmentFixture{
 		utils.CreateTestSegment(collectionID, partitionID, segmentID1, nodeID1, 1, channel),
 		utils.CreateTestSegment(collectionID, partitionID, segmentID2, nodeID2, 1, channel),
 		utils.CreateTestSegment(collectionID, partitionID, segmentID3, nodeID1, 1, channel),
@@ -1032,7 +1032,7 @@ func (suite *SegmentCheckerTestSuite) TestFilterOutExistedOnLeader() {
 
 	// Test case 1: No leader views - should skip releasing segments
 	ch2DelegatorList := getCh2DelegatorList()
-	result := checker.filterOutExistedOnLeader(replica, segments, ch2DelegatorList)
+	result := checker.filterOutExistedOnLeader(replica, meta.SeedInto(checker.dist, segments...), ch2DelegatorList)
 	suite.Equal(0, len(result), "Should return all segments when no leader views")
 
 	// Test case 2: Segment serving on leader - should be filtered out
@@ -1048,7 +1048,7 @@ func (suite *SegmentCheckerTestSuite) TestFilterOutExistedOnLeader() {
 	})
 
 	ch2DelegatorList = getCh2DelegatorList()
-	result = checker.filterOutExistedOnLeader(replica, segments, ch2DelegatorList)
+	result = checker.filterOutExistedOnLeader(replica, meta.SeedInto(checker.dist, segments...), ch2DelegatorList)
 	suite.Len(result, 2, "Should filter out segment serving on leader")
 
 	// Check that segmentID1 is filtered out
@@ -1069,7 +1069,7 @@ func (suite *SegmentCheckerTestSuite) TestFilterOutExistedOnLeader() {
 	})
 
 	ch2DelegatorList = getCh2DelegatorList()
-	result = checker.filterOutExistedOnLeader(replica, segments, ch2DelegatorList)
+	result = checker.filterOutExistedOnLeader(replica, meta.SeedInto(checker.dist, segments...), ch2DelegatorList)
 	suite.Len(result, 1, "Should filter out segments serving on their respective leaders")
 	suite.Equal(segmentID3, result[0].GetID(), "Only non-serving segment should remain")
 
@@ -1086,7 +1086,7 @@ func (suite *SegmentCheckerTestSuite) TestFilterOutExistedOnLeader() {
 	})
 
 	ch2DelegatorList = getCh2DelegatorList()
-	result = checker.filterOutExistedOnLeader(replica, []*meta.Segment{segments[2]}, ch2DelegatorList) // Only test segmentID3
+	result = checker.filterOutExistedOnLeader(replica, meta.SeedInto(checker.dist, []*meta.SegmentFixture{segments[2]}...), ch2DelegatorList) // Only test segmentID3
 	suite.Len(result, 1, "Segment not serving on its actual node should not be filtered")
 }
 
@@ -1112,7 +1112,7 @@ func (suite *SegmentCheckerTestSuite) TestFilterOutSegmentInUse() {
 	replica := utils.CreateTestReplica(1, collectionID, []int64{nodeID1, nodeID2})
 
 	// Create test segments
-	segments := []*meta.Segment{
+	segments := []*meta.SegmentFixture{
 		utils.CreateTestSegment(collectionID, partitionID, segmentID1, nodeID1, 1, channel),
 		utils.CreateTestSegment(collectionID, partitionID, segmentID2, nodeID2, 1, channel),
 		utils.CreateTestSegment(collectionID, partitionID, segmentID3, nodeID1, 1, channel),
@@ -1139,7 +1139,7 @@ func (suite *SegmentCheckerTestSuite) TestFilterOutSegmentInUse() {
 
 	// Test case 1: No leader views - should skip releasing segments
 	ch2DelegatorList := getCh2DelegatorList()
-	result := checker.filterOutSegmentInUse(ctx, replica, segments, ch2DelegatorList)
+	result := checker.filterOutSegmentInUse(ctx, replica, meta.SeedInto(checker.dist, segments...), ch2DelegatorList)
 	suite.Equal(0, len(result), "Should return all segments when no leader views")
 
 	// Test case 2: Leader view with outdated target version - segment should be filtered (still in use)
@@ -1156,7 +1156,7 @@ func (suite *SegmentCheckerTestSuite) TestFilterOutSegmentInUse() {
 	})
 
 	ch2DelegatorList = getCh2DelegatorList()
-	result = checker.filterOutSegmentInUse(ctx, replica, []*meta.Segment{segments[0]}, ch2DelegatorList)
+	result = checker.filterOutSegmentInUse(ctx, replica, meta.SeedInto(checker.dist, []*meta.SegmentFixture{segments[0]}...), ch2DelegatorList)
 	suite.Len(result, 0, "Segment should be filtered out when delegator hasn't updated to latest version")
 
 	// Test case 3: Leader view with current target version - segment should not be filtered
@@ -1173,7 +1173,7 @@ func (suite *SegmentCheckerTestSuite) TestFilterOutSegmentInUse() {
 	})
 
 	ch2DelegatorList = getCh2DelegatorList()
-	result = checker.filterOutSegmentInUse(ctx, replica, []*meta.Segment{segments[0]}, ch2DelegatorList)
+	result = checker.filterOutSegmentInUse(ctx, replica, meta.SeedInto(checker.dist, []*meta.SegmentFixture{segments[0]}...), ch2DelegatorList)
 	suite.Len(result, 1, "Segment should not be filtered when delegator has updated to latest version")
 
 	// Test case 4: Leader view with initial target version - segment should not be filtered
@@ -1190,7 +1190,7 @@ func (suite *SegmentCheckerTestSuite) TestFilterOutSegmentInUse() {
 	})
 
 	ch2DelegatorList = getCh2DelegatorList()
-	result = checker.filterOutSegmentInUse(ctx, replica, []*meta.Segment{segments[1]}, ch2DelegatorList)
+	result = checker.filterOutSegmentInUse(ctx, replica, meta.SeedInto(checker.dist, []*meta.SegmentFixture{segments[1]}...), ch2DelegatorList)
 	suite.Len(result, 1, "Segment should not be filtered when leader has initial target version")
 
 	// Test case 5: Multiple leader views with mixed versions - segment should be filtered (still in use)
@@ -1218,19 +1218,19 @@ func (suite *SegmentCheckerTestSuite) TestFilterOutSegmentInUse() {
 		Node: nodeID2,
 		View: leaderView5,
 	})
-	testSegments := []*meta.Segment{
+	testSegments := []*meta.SegmentFixture{
 		utils.CreateTestSegment(collectionID, partitionID, segmentID1, nodeID1, 1, channel),
 		utils.CreateTestSegment(collectionID, partitionID, segmentID2, nodeID2, 1, channel),
 	}
 
 	ch2DelegatorList = getCh2DelegatorList()
-	result = checker.filterOutSegmentInUse(ctx, replica, testSegments, ch2DelegatorList)
+	result = checker.filterOutSegmentInUse(ctx, replica, meta.SeedInto(checker.dist, testSegments...), ch2DelegatorList)
 	suite.Len(result, 0, "Should release all segments when any delegator hasn't updated")
 
 	// Test case 6: Partition is nil - should release all segments (no partition info)
 	checker.meta.RemovePartition(ctx, partitionID)
 	ch2DelegatorList = getCh2DelegatorList()
-	result = checker.filterOutSegmentInUse(ctx, replica, []*meta.Segment{segments[0]}, ch2DelegatorList)
+	result = checker.filterOutSegmentInUse(ctx, replica, meta.SeedInto(checker.dist, []*meta.SegmentFixture{segments[0]}...), ch2DelegatorList)
 	suite.Len(result, 0, "Should release all segments when partition is nil")
 }
 
@@ -1275,7 +1275,7 @@ func (suite *SegmentCheckerTestSuite) TestReopenOnStaleDataVersion() {
 	// dist has the segment loaded with an older DataVersion
 	distSegment := utils.CreateTestSegment(1, 1, 1, 2, 1, "test-insert-channel")
 	distSegment.DataVersion = proto.Int32(1)
-	checker.dist.SegmentDistManager.Update(2, distSegment)
+	checker.dist.SegmentDistManager.Update(2, meta.SeedInto(checker.dist, distSegment)...)
 	checker.dist.ChannelDistManager.Update(2, &meta.DmChannel{
 		VchannelInfo: &datapb.VchannelInfo{
 			CollectionID: 1,
@@ -1306,7 +1306,7 @@ func (suite *SegmentCheckerTestSuite) TestReopenOnStaleDataVersion() {
 	// when dist DataVersion catches up, no reopen task should be generated
 	addedTasks = nil
 	distSegment.DataVersion = proto.Int32(2)
-	checker.dist.SegmentDistManager.Update(2, distSegment)
+	checker.dist.SegmentDistManager.Update(2, meta.SeedInto(checker.dist, distSegment)...)
 	// invalidate version cache to force re-check
 	delete(checker.versionCache, int64(1))
 	tasks = checker.Check(context.TODO())
@@ -1317,7 +1317,7 @@ func (suite *SegmentCheckerTestSuite) TestReopenOnStaleDataVersion() {
 	// DataVersion must not be used as a Reopen trigger to avoid an infinite loop.
 	addedTasks = nil
 	distSegment.DataVersion = nil
-	checker.dist.SegmentDistManager.Update(2, distSegment)
+	checker.dist.SegmentDistManager.Update(2, meta.SeedInto(checker.dist, distSegment)...)
 	delete(checker.versionCache, int64(1))
 	tasks = checker.Check(context.TODO())
 	suite.Len(tasks, 0)

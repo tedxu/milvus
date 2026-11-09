@@ -77,7 +77,7 @@ func (suite *IndexCheckerSuite) SetupTest() {
 	suite.nodeMgr = session.NewNodeManager()
 	suite.metaStore = metacache.NewMetaStore(nil)
 	suite.meta = meta.NewMeta(idAllocator, store, suite.nodeMgr, suite.metaStore)
-	distManager := meta.NewDistributionManager(suite.nodeMgr)
+	distManager := meta.NewDistributionManager(suite.nodeMgr, meta.WithMetaView(suite.metaStore))
 
 	suite.targetMgr = meta.NewMockTargetManager(suite.T())
 	suite.checker = NewIndexChecker(suite.meta, distManager, suite.nodeMgr, suite.targetMgr)
@@ -145,7 +145,7 @@ func (suite *IndexCheckerSuite) TestLoadIndex() {
 	checker.meta.HandleNodeUp(ctx, 2)
 
 	// dist
-	checker.dist.SegmentDistManager.Update(1, utils.CreateTestSegment(1, 1, 2, 1, 1, "test-insert-channel"))
+	checker.dist.SegmentDistManager.Update(1, meta.SeedInto(checker.dist, utils.CreateTestSegment(1, 1, 2, 1, 1, "test-insert-channel"))...)
 
 	// store
 	suite.putSegment(2, nil)
@@ -205,8 +205,8 @@ func (suite *IndexCheckerSuite) TestIndexInfoNotMatch() {
 	checker.meta.HandleNodeUp(ctx, 2)
 
 	// dist
-	checker.dist.SegmentDistManager.Update(1, utils.CreateTestSegment(1, 1, 2, 1, 1, "test-insert-channel"))
-	checker.dist.SegmentDistManager.Update(1, utils.CreateTestSegment(1, 1, 3, 1, 1, "test-insert-channel"))
+	checker.dist.SegmentDistManager.Update(1, meta.SeedInto(checker.dist, utils.CreateTestSegment(1, 1, 2, 1, 1, "test-insert-channel"))...)
+	checker.dist.SegmentDistManager.Update(1, meta.SeedInto(checker.dist, utils.CreateTestSegment(1, 1, 3, 1, 1, "test-insert-channel"))...)
 
 	// store
 	suite.putSegment(2, nil)
@@ -250,8 +250,8 @@ func (suite *IndexCheckerSuite) TestNoStoreRecordNoTask() {
 	checker.meta.HandleNodeUp(ctx, 2)
 
 	// dist
-	checker.dist.SegmentDistManager.Update(1, utils.CreateTestSegment(1, 1, 2, 1, 1, "test-insert-channel"))
-	checker.dist.SegmentDistManager.Update(1, utils.CreateTestSegment(1, 1, 3, 1, 1, "test-insert-channel"))
+	checker.dist.SegmentDistManager.Update(1, meta.SeedInto(checker.dist, utils.CreateTestSegment(1, 1, 2, 1, 1, "test-insert-channel"))...)
+	checker.dist.SegmentDistManager.Update(1, meta.SeedInto(checker.dist, utils.CreateTestSegment(1, 1, 3, 1, 1, "test-insert-channel"))...)
 	suite.putSegment(2, nil)
 	suite.putSegment(3, nil)
 
@@ -293,7 +293,7 @@ func (suite *IndexCheckerSuite) TestCreateNewIndex() {
 	// dist
 	segment := utils.CreateTestSegment(1, 1, 2, 1, 1, "test-insert-channel")
 	segment.IndexBuilds = map[int64]int64{1000: 0}
-	checker.dist.SegmentDistManager.Update(1, segment)
+	checker.dist.SegmentDistManager.Update(1, meta.SeedInto(checker.dist, segment)...)
 
 	// store
 	suite.metaStore.PutIndex(&model.Index{CollectionID: 1, FieldID: 101, IndexID: 1000})
@@ -319,7 +319,7 @@ func TestRemoveRedundantIndex(t *testing.T) {
 	nodeMgr := session.NewNodeManager()
 	metaStore := metacache.NewMetaStore(nil)
 	metaMgr := meta.NewMeta(params.RandomIncrementIDAllocator(), catalog, nodeMgr, metaStore)
-	distManager := meta.NewDistributionManager(nodeMgr)
+	distManager := meta.NewDistributionManager(nodeMgr, meta.WithMetaView(metaStore))
 	targetMgr := meta.NewMockTargetManager(t)
 	checker := NewIndexChecker(metaMgr, distManager, nodeMgr, targetMgr)
 	targetMgr.EXPECT().GetSealedSegment(mock.Anything, mock.Anything, mock.Anything, mock.Anything).RunAndReturn(func(ctx context.Context, cid, sid int64, i3 int32) *datapb.SegmentInfo {
@@ -357,7 +357,7 @@ func TestRemoveRedundantIndex(t *testing.T) {
 	// dist
 	segment := utils.CreateTestSegment(1, 1, 2, 1, 1, "test-insert-channel")
 	segment.IndexBuilds = map[int64]int64{1000: 0, 1001: 0}
-	checker.dist.SegmentDistManager.Update(1, segment)
+	checker.dist.SegmentDistManager.Update(1, meta.SeedInto(checker.dist, segment)...)
 
 	// store
 	metaStore.PutIndex(&model.Index{CollectionID: 1, FieldID: 101, IndexID: 1000})
@@ -413,7 +413,7 @@ func (suite *IndexCheckerSuite) TestLoadJsonIndex() {
 
 	segment := utils.CreateTestSegment(1, 1, 2, 1, 1, "test-insert-channel")
 	segment.IndexBuilds = map[int64]int64{fieldIndexInfo.IndexID: fieldIndexInfo.BuildID}
-	checker.dist.SegmentDistManager.Update(1, segment)
+	checker.dist.SegmentDistManager.Update(1, meta.SeedInto(checker.dist, segment)...)
 
 	// store
 	suite.metaStore.PutIndex(&model.Index{CollectionID: 1, FieldID: 101, IndexID: 1000})
@@ -476,7 +476,7 @@ func (suite *IndexCheckerSuite) TestJsonIndexNotMatch() {
 	checker.meta.HandleNodeUp(ctx, 2)
 
 	// dist
-	checker.dist.SegmentDistManager.Update(1, utils.CreateTestSegment(1, 1, 2, 1, 1, "test-insert-channel"))
+	checker.dist.SegmentDistManager.Update(1, meta.SeedInto(checker.dist, utils.CreateTestSegment(1, 1, 2, 1, 1, "test-insert-channel"))...)
 
 	// store
 	suite.metaStore.PutIndex(&model.Index{CollectionID: 1, FieldID: 101, IndexID: 1000})
@@ -526,7 +526,7 @@ func (suite *IndexCheckerSuite) TestCreateNewJsonIndex() {
 
 	segment := utils.CreateTestSegment(1, 1, 2, 1, 1, "test-insert-channel")
 	segment.IndexBuilds = map[int64]int64{fieldIndexInfo.IndexID: fieldIndexInfo.BuildID}
-	checker.dist.SegmentDistManager.Update(1, segment)
+	checker.dist.SegmentDistManager.Update(1, meta.SeedInto(checker.dist, segment)...)
 
 	// store
 	suite.metaStore.PutIndex(&model.Index{CollectionID: 1, FieldID: 101, IndexID: 1000})
@@ -562,7 +562,7 @@ func (suite *IndexCheckerSuite) setupLoadedIndex(builds map[int64]int64) {
 	suite.putSegment(2, nil)
 	segment := utils.CreateTestSegment(1, 1, 2, 1, 1, "test-insert-channel")
 	segment.IndexBuilds = builds
-	suite.checker.dist.SegmentDistManager.Update(1, segment)
+	suite.checker.dist.SegmentDistManager.Update(1, meta.SeedInto(suite.checker.dist, segment)...)
 }
 
 func (suite *IndexCheckerSuite) TestLoadedCurrentBuildNoTask() {

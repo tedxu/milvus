@@ -111,7 +111,7 @@ func (c *saveReplicaRecordingCatalog) SaveReplica(ctx context.Context, replicas 
 	return nil
 }
 
-func (m *countingSegmentDistManager) GetByFilter(filters ...meta.SegmentDistFilter) []*meta.Segment {
+func (m *countingSegmentDistManager) GetByFilter(filters ...meta.SegmentDistFilter) []*meta.LoadedSegment {
 	m.getByFilterCalls++
 	return m.SegmentDistManagerInterface.GetByFilter(filters...)
 }
@@ -239,8 +239,7 @@ func (suite *ReplicaObserverSuite) TestCheckNodesInReplica() {
 			View:    &meta.LeaderView{ID: nodeID, CollectionID: suite.collectionID, Channel: "test-insert-channel1", Status: &querypb.LeaderViewStatus{Serviceable: true}},
 		})
 		suite.distMgr.SegmentDistManager.Update(
-			nodeID,
-			utils.CreateTestSegment(suite.collectionID, suite.partitionID, 1, nodeID, 1, "test-insert-channel1"))
+			nodeID, meta.SeedInto(suite.distMgr, utils.CreateTestSegment(suite.collectionID, suite.partitionID, 1, nodeID, 1, "test-insert-channel1"))...)
 	}
 
 	// Do a replica transfer.

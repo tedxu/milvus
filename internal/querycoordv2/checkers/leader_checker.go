@@ -158,7 +158,7 @@ func (c *LeaderChecker) findNeedSyncPartitionStats(ctx context.Context, replica 
 	return ret
 }
 
-func (c *LeaderChecker) findNeedLoadedSegments(ctx context.Context, replica *meta.Replica, leaderView *meta.LeaderView, dist []*meta.Segment) []task.Task {
+func (c *LeaderChecker) findNeedLoadedSegments(ctx context.Context, replica *meta.Replica, leaderView *meta.LeaderView, dist []*meta.LoadedSegment) []task.Task {
 	log := mlog.With(
 		mlog.FieldCollectionID(leaderView.CollectionID),
 		mlog.Int64("replica", replica.GetID()),
@@ -208,7 +208,7 @@ func (c *LeaderChecker) findNeedLoadedSegments(ctx context.Context, replica *met
 	return ret
 }
 
-func (c *LeaderChecker) findNeedRemovedSegments(ctx context.Context, replica *meta.Replica, leaderView *meta.LeaderView, dists []*meta.Segment) []task.Task {
+func (c *LeaderChecker) findNeedRemovedSegments(ctx context.Context, replica *meta.Replica, leaderView *meta.LeaderView, dists []*meta.LoadedSegment) []task.Task {
 	log := mlog.With(
 		mlog.FieldCollectionID(leaderView.CollectionID),
 		mlog.Int64("replica", replica.GetID()),

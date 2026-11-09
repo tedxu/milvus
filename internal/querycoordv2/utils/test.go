@@ -118,11 +118,3 @@ func CreateTestSegmentInfo(collection, partition, segment int64, channel string)
 		InsertChannel: channel,
 	}
 }
-
-func CreateTestSegment(collection, partition, segment, node, version int64, channel string) *meta.Segment {
-	return &meta.Segment{
-		SegmentInfo: CreateTestSegmentInfo(collection, partition, segment, channel),
-		Node:        node,
-		Version:     version,
-	}
-}

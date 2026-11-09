@@ -146,12 +146,12 @@ func TestServer_getSegmentsJSON(t *testing.T) {
 	mockCluster.EXPECT().GetMetrics(mock.Anything, mock.Anything, req).Return(resp, nil)
 
 	server.dist = meta.NewDistributionManager(nodeManager)
-	server.dist.SegmentDistManager.Update(1, meta.SegmentFromInfo(&datapb.SegmentInfo{
+	server.dist.SegmentDistManager.Update(1, meta.SeedInto(server.dist, meta.FixtureFromInfo(&datapb.SegmentInfo{
 		ID:            1,
 		CollectionID:  1,
 		PartitionID:   1,
 		InsertChannel: "dmc0",
-	}))
+	}))...)
 
 	ctx := context.TODO()
 

@@ -33,7 +33,6 @@ import (
 
 const (
 	PlanInfoPrefix = "Balance-Plans:" // Prefix for balance plan log messages
-	DistInfoPrefix = "Balance-Dists:" // Prefix for distribution info log messages
 )
 
 // CreateSegmentTasksFromPlans converts segment assignment plans into executable tasks.
@@ -148,75 +147,6 @@ func PrintNewBalancePlans(collectionID int64, replicaID int64, segmentPlans []as
 	balanceInfo += "}"
 	mlog.Info(context.TODO(),
 		balanceInfo)
-}
-
-// PrintCurrentReplicaDist logs the current distribution of segments and channels across nodes
-// in a replica, including both stopping nodes and normal nodes. This is useful for debugging
-// and monitoring the balance state before and after balance operations.
-func PrintCurrentReplicaDist(replica *meta.Replica,
-	stoppingNodesSegments map[int64][]*meta.Segment, nodeSegments map[int64][]*meta.Segment,
-	channelManager *meta.ChannelDistManager, segmentDistMgr *meta.SegmentDistManager,
-) {
-	distInfo := fmt.Sprintf("%s {collectionID:%d, replicaID:%d, ", DistInfoPrefix, replica.GetCollectionID(), replica.GetID())
-	// 1. print stopping nodes segment distribution
-	distInfo += "[stoppingNodesSegmentDist:"
-	for stoppingNodeID, stoppedSegments := range stoppingNodesSegments {
-		distInfo += fmt.Sprintf("[nodeID:%d, ", stoppingNodeID)
-		distInfo += "stopped-segments:["
-		for _, stoppedSegment := range stoppedSegments {
-			distInfo += fmt.Sprintf("%d,", stoppedSegment.GetID())
-		}
-		distInfo += "]]"
-	}
-	distInfo += "]"
-	// 2. print normal nodes segment distribution
-	distInfo += "[normalNodesSegmentDist:"
-	for normalNodeID, normalNodeCollectionSegments := range nodeSegments {
-		distInfo += fmt.Sprintf("[nodeID:%d, ", normalNodeID)
-		distInfo += "loaded-segments:["
-		nodeRowSum := int64(0)
-		normalNodeSegments := segmentDistMgr.GetByFilter(meta.WithNodeID(normalNodeID))
-		for _, normalNodeSegment := range normalNodeSegments {
-			nodeRowSum += normalNodeSegment.GetNumOfRows()
-		}
-		nodeCollectionRowSum := int64(0)
-		for _, normalCollectionSegment := range normalNodeCollectionSegments {
-			distInfo += fmt.Sprintf("[segmentID: %d, rowCount: %d] ",
-				normalCollectionSegment.GetID(), normalCollectionSegment.GetNumOfRows())
-			nodeCollectionRowSum += normalCollectionSegment.GetNumOfRows()
-		}
-		distInfo += fmt.Sprintf("] nodeRowSum:%d nodeCollectionRowSum:%d]", nodeRowSum, nodeCollectionRowSum)
-	}
-	distInfo += "]"
-
-	// 3. print stopping nodes channel distribution
-	distInfo += "[stoppingNodesChannelDist:"
-	for stoppingNodeID := range stoppingNodesSegments {
-		stoppingNodeChannels := channelManager.GetByFilter(meta.WithCollectionID2Channel(replica.GetCollectionID()), meta.WithNodeID2Channel(stoppingNodeID))
-		distInfo += fmt.Sprintf("[nodeID:%d, count:%d,", stoppingNodeID, len(stoppingNodeChannels))
-		distInfo += "channels:["
-		for _, stoppingChan := range stoppingNodeChannels {
-			distInfo += fmt.Sprintf("%s,", stoppingChan.GetChannelName())
-		}
-		distInfo += "]]"
-	}
-	distInfo += "]"
-
-	// 4. print normal nodes channel distribution
-	distInfo += "[normalNodesChannelDist:"
-	for normalNodeID := range nodeSegments {
-		normalNodeChannels := channelManager.GetByFilter(meta.WithCollectionID2Channel(replica.GetCollectionID()), meta.WithNodeID2Channel(normalNodeID))
-		distInfo += fmt.Sprintf("[nodeID:%d, count:%d,", normalNodeID, len(normalNodeChannels))
-		distInfo += "channels:["
-		for _, normalNodeChan := range normalNodeChannels {
-			distInfo += fmt.Sprintf("%s,", normalNodeChan.GetChannelName())
-		}
-		distInfo += "]]"
-	}
-	distInfo += "]"
-
-	mlog.Info(context.TODO(),
-		distInfo)
 }
 
 // sortIfChannelAtWALLocated sorts channels based on WAL location when streaming service is enabled.

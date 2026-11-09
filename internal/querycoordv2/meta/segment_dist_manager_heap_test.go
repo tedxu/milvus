@@ -20,8 +20,6 @@ import (
 	"fmt"
 	"runtime"
 	"testing"
-
-	"github.com/milvus-io/milvus/pkg/v3/proto/datapb"
 )
 
 const (
@@ -34,24 +32,18 @@ const (
 // only the loaded build the handler keeps. The baseline before trimming,
 // with the full FieldIndexInfo a node echoes back (8 params and 4 file paths
 // of 120 bytes per index), measured 4613 heap bytes per segment.
-func newHeapFixtureSegments(n, indexesPerSegment int) []*Segment {
-	segments := make([]*Segment, 0, n)
+func newHeapFixtureSegments(n, indexesPerSegment int) []*LoadedSegment {
+	segments := make([]*LoadedSegment, 0, n)
 	for i := 0; i < n; i++ {
 		id := int64(i + 1)
 		builds := make(map[int64]int64, indexesPerSegment)
 		for j := 0; j < indexesPerSegment; j++ {
 			builds[int64(1000+j)] = id*10 + int64(j)
 		}
-		segments = append(segments, &Segment{
-			SegmentInfo: &datapb.SegmentInfo{
-				ID:            id,
-				CollectionID:  1,
-				PartitionID:   2,
-				InsertChannel: fmt.Sprintf("channel-%d", i%16),
-				NumOfRows:     1000,
-				Level:         datapb.SegmentLevel_L1,
-				IsSorted:      true,
-			},
+		segments = append(segments, &LoadedSegment{
+			ID:               id,
+			CollectionID:     1,
+			Channel:          fmt.Sprintf("channel-%d", i%16),
 			Version:          1,
 			IndexBuilds:      builds,
 			JSONStatsFormats: map[int64]int64{200: 2},
