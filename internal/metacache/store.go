@@ -121,6 +121,10 @@ func (c *CollectionInfo) IsExternal() bool {
 type MetaView interface {
 	// Segments — read
 	GetSegment(segmentID int64) (*datapb.SegmentInfo, bool)
+	// ForEachSegment calls fn once per ID in ids, in order, under one read
+	// lock. ok is false when the store has no such segment. fn must not
+	// call the store and must not keep seg past return.
+	ForEachSegment(ids []int64, fn func(id int64, seg *datapb.SegmentInfo, ok bool))
 	GetSegmentsByIDs(segmentIDs []int64) map[int64]*datapb.SegmentInfo
 	GetAllSegments() map[int64]*datapb.SegmentInfo
 	GetSegments(collectionID int64) map[int64]*datapb.SegmentInfo
@@ -292,6 +296,18 @@ func (s *metaStore) GetSegment(segmentID int64) (*datapb.SegmentInfo, bool) {
 	defer s.mu.RUnlock()
 	seg, ok := s.segments[segmentID]
 	return seg, ok
+}
+
+func (s *metaStore) ForEachSegment(ids []int64, fn func(id int64, seg *datapb.SegmentInfo, ok bool)) {
+	if len(ids) == 0 {
+		return
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, id := range ids {
+		seg, ok := s.segments[id]
+		fn(id, seg, ok)
+	}
 }
 
 func (s *metaStore) GetSegmentsByIDs(segmentIDs []int64) map[int64]*datapb.SegmentInfo {
