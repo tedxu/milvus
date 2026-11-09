@@ -73,27 +73,6 @@ func SegmentRefsFromDist(view metacache.MetaView, segments []*meta.LoadedSegment
 	return refs
 }
 
-// distRowCounts returns each entry's row count from the store, in one
-// batched read; an entry the store no longer has counts 0.
-func distRowCounts(view metacache.MetaView, segments []*meta.LoadedSegment) []int64 {
-	rows := make([]int64, len(segments))
-	if len(segments) == 0 {
-		return rows
-	}
-	ids := make([]int64, len(segments))
-	for i, segment := range segments {
-		ids[i] = segment.ID
-	}
-	i := 0
-	view.ForEachSegment(ids, func(_ int64, info *datapb.SegmentInfo, ok bool) {
-		if ok {
-			rows[i] = info.GetNumOfRows()
-		}
-		i++
-	})
-	return rows
-}
-
 // SegmentAssignPlan represents a plan to assign a segment to a node
 type SegmentAssignPlan struct {
 	Segment      SegmentRef

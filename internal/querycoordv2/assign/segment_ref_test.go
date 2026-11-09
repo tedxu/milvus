@@ -139,3 +139,23 @@ func TestDroppedSegmentStillResolved(t *testing.T) {
 	assert.Equal(t, int64(7), refs[0].NumOfRows)
 	assert.Equal(t, int64(100), refs[0].PartitionID)
 }
+
+// TestWorkloadStatusFromAggregates pins the workload status on a known
+// distribution, with the totals a full scan gives: per node and per
+// (node, collection), a store miss counting 0.
+func TestWorkloadStatusFromAggregates(t *testing.T) {
+	nodeManager, scheduler := newTieTestNodes(t, 2)
+	dist := meta.NewDistributionManager(nodeManager)
+	fixture := func(id, collection, rows, node int64) *meta.SegmentFixture {
+		return &meta.SegmentFixture{SegmentInfo: &datapb.SegmentInfo{ID: id, CollectionID: collection, NumOfRows: rows}, Node: node}
+	}
+	dist.SegmentDistManager.Update(1, append(meta.SeedInto(dist, fixture(1, 100, 10, 1), fixture(2, 200, 20, 1)),
+		&meta.LoadedSegment{ID: 9, CollectionID: 100, Channel: "ch", Node: 1})...)
+	dist.SegmentDistManager.Update(2, meta.SeedInto(dist, fixture(3, 100, 30, 2))...)
+
+	rowCount := newRowCountBasedAssignPolicy(nodeManager, scheduler, dist).getWorkloadStatus()
+	assert.Equal(t, map[int64]int{1: 30, 2: 30}, rowCount.nodeGlobalRowCount)
+	score := newScoreBasedAssignPolicy(nodeManager, scheduler, dist, nil).getWorkloadStatus()
+	assert.Equal(t, map[int64]int{1: 30, 2: 30}, score.nodeGlobalRowCount)
+	assert.Equal(t, map[int64]map[int64]int{1: {100: 10, 200: 20}, 2: {100: 30}}, score.nodeCollectionRowCount)
+}

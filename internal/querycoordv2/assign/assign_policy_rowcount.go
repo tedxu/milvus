@@ -64,10 +64,10 @@ func (p *RowCountBasedAssignPolicy) getWorkloadStatus() *rowcountWorkloadStatus 
 		nodeGlobalChannelCount:    make(map[int64]int),
 	}
 
-	allSegments := p.dist.SegmentDistManager.GetByFilter()
-	rows := distRowCounts(p.dist.MetaView(), allSegments)
-	for i, s := range allSegments {
-		status.nodeGlobalRowCount[s.Node] += int(rows[i])
+	// Per-node totals are kept at ingestion, so this does not scan the
+	// distribution or read the store.
+	for node, rows := range p.dist.SegmentDistManager.NodeRows() {
+		status.nodeGlobalRowCount[node] += int(rows)
 	}
 
 	allChannels := p.dist.ChannelDistManager.GetByFilter()
