@@ -192,12 +192,7 @@ func (c *IndexChecker) checkSegment(segment *meta.Segment, indexInfos []*indexpb
 	var result []int64
 	for _, indexInfo := range indexInfos {
 		fieldID, indexID := indexInfo.FieldID, indexInfo.IndexID
-		info, ok := segment.IndexInfo[indexID]
-		if !ok {
-			result = append(result, fieldID)
-			continue
-		}
-		if indexID != info.GetIndexID() || !info.GetEnableIndex() {
+		if _, ok := segment.IndexBuilds[indexID]; !ok {
 			result = append(result, fieldID)
 		}
 	}
@@ -213,7 +208,7 @@ func (c *IndexChecker) checkRedundantIndices(segment *meta.Segment, indexInfos [
 		indexInfoMap.Insert(indexInfo.IndexID)
 	}
 
-	for indexID := range segment.IndexInfo {
+	for indexID := range segment.IndexBuilds {
 		if !indexInfoMap.Contain(indexID) {
 			redundant = append(redundant, indexID)
 		}
@@ -267,7 +262,7 @@ func (c *IndexChecker) checkSegmentStats(segment *meta.Segment, schema *schemapb
 			fieldID := field.GetFieldID()
 			if h.EnableJSONKeyStatsIndex() {
 				if _, ok := loadFieldMap[fieldID]; ok {
-					if info, ok := segment.JSONStatsField[fieldID]; !ok || info.GetDataFormatVersion() < common.JSONStatsDataFormatVersion {
+					if format, ok := segment.JSONStatsFormats[fieldID]; !ok || format < common.JSONStatsDataFormatVersion {
 						result = append(result, fieldID)
 					}
 				}

@@ -22,6 +22,7 @@ import (
 
 	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
 	"github.com/milvus-io/milvus-proto/go-api/v3/msgpb"
+	"github.com/milvus-io/milvus/internal/metacache"
 	"github.com/milvus-io/milvus/internal/querycoordv2/meta"
 	"github.com/milvus-io/milvus/pkg/v3/mlog"
 	"github.com/milvus-io/milvus/pkg/v3/proto/datapb"
@@ -30,7 +31,9 @@ import (
 	"github.com/milvus-io/milvus/pkg/v3/util/tsoutil"
 )
 
-func MergeMetaSegmentIntoSegmentInfo(info *querypb.SegmentInfo, segments ...*meta.Segment) {
+// MergeMetaSegmentIntoSegmentInfo fills info from the distribution entries
+// of one segment. Index fields are read from view.
+func MergeMetaSegmentIntoSegmentInfo(view metacache.MetaView, info *querypb.SegmentInfo, segments ...*meta.Segment) {
 	first := segments[0]
 	if info.GetSegmentID() == 0 {
 		*info = querypb.SegmentInfo{
@@ -46,7 +49,7 @@ func MergeMetaSegmentIntoSegmentInfo(info *querypb.SegmentInfo, segments ...*met
 			Level:        first.Level,
 			IsSorted:     first.GetIsSorted(),
 		}
-		for _, indexInfo := range first.IndexInfo {
+		for _, indexInfo := range meta.LoadedFieldIndexInfos(view, first.GetCollectionID(), first.GetID(), first.IndexBuilds) {
 			info.IndexName = indexInfo.IndexName
 			info.IndexID = indexInfo.IndexID
 			info.IndexInfos = append(info.IndexInfos, indexInfo)

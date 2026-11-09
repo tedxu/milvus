@@ -303,11 +303,7 @@ func (suite *IndexCheckerSuite) TestCreateNewIndex() {
 
 	// dist
 	segment := utils.CreateTestSegment(1, 1, 2, 1, 1, "test-insert-channel")
-	segment.IndexInfo = map[int64]*querypb.FieldIndexInfo{1000: {
-		FieldID:     101,
-		IndexID:     1000,
-		EnableIndex: true,
-	}}
+	segment.IndexBuilds = map[int64]int64{1000: 0}
 	checker.dist.SegmentDistManager.Update(1, segment)
 
 	// broker
@@ -386,18 +382,7 @@ func TestRemoveRedundantIndex(t *testing.T) {
 
 	// dist
 	segment := utils.CreateTestSegment(1, 1, 2, 1, 1, "test-insert-channel")
-	segment.IndexInfo = map[int64]*querypb.FieldIndexInfo{
-		1000: {
-			FieldID:     101,
-			IndexID:     1000,
-			EnableIndex: true,
-		},
-		1001: {
-			FieldID:     102,
-			IndexID:     1001,
-			EnableIndex: true,
-		},
-	}
+	segment.IndexBuilds = map[int64]int64{1000: 0, 1001: 0}
 	checker.dist.SegmentDistManager.Update(1, segment)
 
 	// broker
@@ -453,10 +438,8 @@ func (suite *IndexCheckerSuite) TestLoadJsonIndex() {
 		EnableIndex: true,
 	}
 
-	indexInfo := make(map[int64]*querypb.FieldIndexInfo)
-	indexInfo[fieldIndexInfo.IndexID] = fieldIndexInfo
 	segment := utils.CreateTestSegment(1, 1, 2, 1, 1, "test-insert-channel")
-	segment.IndexInfo = indexInfo
+	segment.IndexBuilds = map[int64]int64{fieldIndexInfo.IndexID: fieldIndexInfo.BuildID}
 	checker.dist.SegmentDistManager.Update(1, segment)
 
 	// broker
@@ -585,10 +568,8 @@ func (suite *IndexCheckerSuite) TestCreateNewJsonIndex() {
 		EnableIndex: true,
 	}
 
-	indexInfo := make(map[int64]*querypb.FieldIndexInfo)
-	indexInfo[fieldIndexInfo.IndexID] = fieldIndexInfo
 	segment := utils.CreateTestSegment(1, 1, 2, 1, 1, "test-insert-channel")
-	segment.IndexInfo = indexInfo
+	segment.IndexBuilds = map[int64]int64{fieldIndexInfo.IndexID: fieldIndexInfo.BuildID}
 	checker.dist.SegmentDistManager.Update(1, segment)
 
 	// broker

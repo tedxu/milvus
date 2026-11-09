@@ -20,9 +20,13 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
+	"github.com/milvus-io/milvus/internal/metacache/metacachetest"
+	"github.com/milvus-io/milvus/internal/metastore/model"
 	"github.com/milvus-io/milvus/pkg/v3/proto/datapb"
 	"github.com/milvus-io/milvus/pkg/v3/proto/querypb"
 	"github.com/milvus-io/milvus/pkg/v3/util/metricsinfo"
@@ -343,7 +347,7 @@ func TestGetSegmentDistJSON(t *testing.T) {
 	manager.Update(1, segment1)
 	manager.Update(2, segment2)
 
-	segments := manager.GetSegmentDist(0)
+	segments := manager.GetSegmentDist(0, metacachetest.NewMetaStore())
 	assert.Equal(t, 2, len(segments))
 
 	checkResults := func(s *metricsinfo.Segment) {
@@ -369,5 +373,80 @@ func TestGetSegmentDistJSON(t *testing.T) {
 
 	for _, s := range segments {
 		checkResults(s)
+	}
+}
+
+func TestGetSegmentDistReadsIndexFromStore(t *testing.T) {
+	store := metacachetest.NewMetaStore()
+	store.PutIndex(&model.Index{CollectionID: 100, FieldID: 101, IndexID: 7})
+	store.PutSegmentIndexes(&model.SegmentIndex{CollectionID: 100, SegmentID: 1, IndexID: 7, BuildID: 70, IndexMemSize: 4096})
+
+	manager := NewSegmentDistManager()
+	segment := SegmentFromInfo(&datapb.SegmentInfo{ID: 1, CollectionID: 100, InsertChannel: "ch"})
+	segment.IndexBuilds = map[int64]int64{7: 70, 8: 80}
+	manager.Update(1, segment)
+
+	rows := manager.GetSegmentDist(0, store)
+	require.Len(t, rows, 1)
+	fields := rows[0].IndexedFields
+	require.Len(t, fields, 2)
+	assert.Equal(t, metricsinfo.IndexedField{IndexFieldID: 101, IndexID: 7, BuildID: 70, IndexSize: 4096, IsLoaded: true}, *fields[0])
+	// No definition or record in the store: the loaded build is still listed.
+	assert.Equal(t, metricsinfo.IndexedField{IndexID: 8, BuildID: 80, IsLoaded: true}, *fields[1])
+}
+
+func TestLoadedFieldIndexInfos(t *testing.T) {
+	store := metacachetest.NewMetaStore()
+	store.PutIndex(&model.Index{CollectionID: 1, FieldID: 101, IndexID: 100, IndexName: "vec"})
+	store.PutIndex(&model.Index{CollectionID: 1, FieldID: 102, IndexID: 300, IndexName: "no_record"})
+	store.PutSegmentIndexes(&model.SegmentIndex{
+		CollectionID: 1, SegmentID: 10, IndexID: 100, BuildID: 9,
+		IndexMemSize: 4096, NumRows: 1000, IndexVersion: 2,
+		CurrentIndexVersion: 5, CurrentScalarIndexVersion: 6,
+		IndexFileKeys: []string{"f1"},
+	})
+
+	cases := []struct {
+		name   string
+		builds map[int64]int64
+		want   []*querypb.FieldIndexInfo
+	}{
+		{
+			name:   "definition and record",
+			builds: map[int64]int64{100: 7},
+			want: []*querypb.FieldIndexInfo{{
+				FieldID: 101, EnableIndex: true, IndexName: "vec", IndexID: 100, BuildID: 7,
+				IndexSize: 4096, NumRows: 1000, IndexVersion: 2,
+				CurrentIndexVersion: 5, CurrentScalarIndexVersion: 6,
+			}},
+		},
+		{
+			name:   "definition missing",
+			builds: map[int64]int64{200: 8},
+			want:   []*querypb.FieldIndexInfo{{EnableIndex: true, IndexID: 200, BuildID: 8}},
+		},
+		{
+			name:   "record missing",
+			builds: map[int64]int64{300: 3},
+			want:   []*querypb.FieldIndexInfo{{FieldID: 102, EnableIndex: true, IndexName: "no_record", IndexID: 300, BuildID: 3}},
+		},
+		{
+			name:   "sorted by index id",
+			builds: map[int64]int64{300: 3, 200: 8},
+			want: []*querypb.FieldIndexInfo{
+				{EnableIndex: true, IndexID: 200, BuildID: 8},
+				{FieldID: 102, EnableIndex: true, IndexName: "no_record", IndexID: 300, BuildID: 3},
+			},
+		},
+		{name: "nothing loaded", builds: nil, want: []*querypb.FieldIndexInfo{}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := LoadedFieldIndexInfos(store, 1, 10, tc.builds)
+			assert.Equal(t, len(tc.want), len(got))
+			for i := range tc.want {
+				assert.True(t, proto.Equal(tc.want[i], got[i]), "index %d: want %v, got %v", i, tc.want[i], got[i])
+			}
+		})
 	}
 }

@@ -7,6 +7,7 @@ import (
 
 	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
 	"github.com/milvus-io/milvus/internal/json"
+	"github.com/milvus-io/milvus/internal/metacache/metacachetest"
 	"github.com/milvus-io/milvus/internal/querycoordv2/session"
 	"github.com/milvus-io/milvus/pkg/v3/proto/datapb"
 	"github.com/milvus-io/milvus/pkg/v3/proto/querypb"
@@ -76,7 +77,7 @@ func TestGetDistributionJSON(t *testing.T) {
 	})
 
 	// Call GetDistributionJSON
-	jsonOutput := manager.GetDistributionJSON(0)
+	jsonOutput := manager.GetDistributionJSON(0, metacachetest.NewMetaStore())
 
 	// Verify JSON output
 	var dist metricsinfo.QueryCoordDist
@@ -87,7 +88,7 @@ func TestGetDistributionJSON(t *testing.T) {
 	assert.Len(t, dist.DMChannels, 2)
 	assert.Len(t, dist.LeaderViews, 2)
 
-	jsonOutput = manager.GetDistributionJSON(1000)
+	jsonOutput = manager.GetDistributionJSON(1000, metacachetest.NewMetaStore())
 	var dist2 metricsinfo.QueryCoordDist
 	err = json.Unmarshal([]byte(jsonOutput), &dist2)
 	assert.NoError(t, err)

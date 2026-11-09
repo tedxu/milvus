@@ -204,7 +204,7 @@ func (s *Server) registerMetricsRequest() {
 
 	QueryDistAction := func(ctx context.Context, req *milvuspb.GetMetricsRequest, jsonReq gjson.Result) (string, error) {
 		collectionID := metricsinfo.GetCollectionIDFromRequest(jsonReq)
-		return s.dist.GetDistributionJSON(collectionID), nil
+		return s.dist.GetDistributionJSON(collectionID, s.metaView), nil
 	}
 
 	QueryTargetAction := func(ctx context.Context, req *milvuspb.GetMetricsRequest, jsonReq gjson.Result) (string, error) {
