@@ -90,9 +90,9 @@ func (suite *BalanceTestSuite) TestAssignBalance() {
 				{SegmentInfo: &datapb.SegmentInfo{ID: 3}},
 			},
 			expectPlans: []assign.SegmentAssignPlan{
-				{Segment: &meta.Segment{SegmentInfo: &datapb.SegmentInfo{ID: 1}}, From: -1, To: 1},
-				{Segment: &meta.Segment{SegmentInfo: &datapb.SegmentInfo{ID: 2}}, From: -1, To: 2},
-				{Segment: &meta.Segment{SegmentInfo: &datapb.SegmentInfo{ID: 3}}, From: -1, To: 1},
+				{Segment: assign.SegmentRefFromInfo(&datapb.SegmentInfo{ID: 1}, 0), From: -1, To: 1},
+				{Segment: assign.SegmentRefFromInfo(&datapb.SegmentInfo{ID: 2}, 0), From: -1, To: 2},
+				{Segment: assign.SegmentRefFromInfo(&datapb.SegmentInfo{ID: 3}, 0), From: -1, To: 1},
 			},
 		},
 		{
@@ -127,7 +127,7 @@ func (suite *BalanceTestSuite) TestAssignBalance() {
 				nodeInfo.SetState(c.states[i])
 				suite.roundRobinBalancer.nodeManager.Add(nodeInfo)
 			}
-			plans := suite.roundRobinBalancer.GetAssignPolicy().AssignSegment(ctx, 0, c.assignments, c.nodeIDs, false)
+			plans := suite.roundRobinBalancer.GetAssignPolicy().AssignSegment(ctx, 0, assign.SegmentRefsFromDist(c.assignments), c.nodeIDs, false)
 			suite.ElementsMatch(c.expectPlans, plans)
 		})
 	}
@@ -462,7 +462,7 @@ func (suite *BalanceTestSuite) TestBalanceReplica_SkipRedundantSegments() {
 	suite.Empty(channelPlans)
 	// Only non-redundant segments should be moved
 	for _, plan := range segmentPlans {
-		suite.NotEqual(int64(1), plan.Segment.GetID(), "Redundant segment should not be moved")
+		suite.NotEqual(int64(1), plan.Segment.ID, "Redundant segment should not be moved")
 	}
 }
 

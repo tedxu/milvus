@@ -447,7 +447,7 @@ func TestBalanceChecker_GenerateBalanceTasksFromReplicas_Success(t *testing.T) {
 
 	// Create mock balance plans
 	segmentPlan := assign.SegmentAssignPlan{
-		Segment: &meta.Segment{SegmentInfo: &datapb.SegmentInfo{ID: 1}},
+		Segment: assign.SegmentRefFromInfo(&datapb.SegmentInfo{ID: 1}, 0),
 		Replica: mockReplica,
 		From:    1,
 		To:      2,
@@ -540,7 +540,7 @@ func TestBalanceChecker_GenerateBalanceTasksFromReplicas_StoppingBalanceHighPrio
 
 	// Create mock balance plans (without LoadPriority set, should be set by generateBalanceTasksFromReplicas)
 	segmentPlan := assign.SegmentAssignPlan{
-		Segment: &meta.Segment{SegmentInfo: &datapb.SegmentInfo{ID: 1, CollectionID: 1}},
+		Segment: assign.SegmentRefFromInfo(&datapb.SegmentInfo{ID: 1, CollectionID: 1}, 0),
 		Replica: mockReplica,
 		From:    1,
 		To:      2,
@@ -599,7 +599,7 @@ func TestBalanceChecker_GenerateBalanceTasksFromReplicas_NormalBalanceLowPriorit
 
 	// Create mock balance plans (without LoadPriority set)
 	segmentPlan := assign.SegmentAssignPlan{
-		Segment: &meta.Segment{SegmentInfo: &datapb.SegmentInfo{ID: 1, CollectionID: 1}},
+		Segment: assign.SegmentRefFromInfo(&datapb.SegmentInfo{ID: 1, CollectionID: 1}, 0),
 		Replica: mockReplica,
 		From:    1,
 		To:      2,

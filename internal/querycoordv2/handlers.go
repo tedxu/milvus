@@ -28,6 +28,7 @@ import (
 	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
 	"github.com/milvus-io/milvus-proto/go-api/v3/milvuspb"
 	"github.com/milvus-io/milvus/internal/json"
+	"github.com/milvus-io/milvus/internal/querycoordv2/assign"
 	"github.com/milvus-io/milvus/internal/querycoordv2/balance"
 	"github.com/milvus-io/milvus/internal/querycoordv2/meta"
 	"github.com/milvus-io/milvus/internal/querycoordv2/session"
@@ -129,7 +130,7 @@ func (s *Server) balanceSegments(ctx context.Context,
 ) error {
 	balancer := balance.GetGlobalBalancerFactory().GetBalancer()
 	policy := balancer.GetAssignPolicy()
-	plans := policy.AssignSegment(ctx, collectionID, segments, dstNodes, true)
+	plans := policy.AssignSegment(ctx, collectionID, assign.SegmentRefsFromDist(segments), dstNodes, true)
 	for i := range plans {
 		plans[i].From = srcNode
 		plans[i].Replica = replica
@@ -138,17 +139,17 @@ func (s *Server) balanceSegments(ctx context.Context,
 	for _, plan := range plans {
 		mlog.Info(context.TODO(), "manually balance segment...",
 			mlog.Int64("replica", plan.Replica.GetID()),
-			mlog.String("channel", plan.Segment.InsertChannel),
+			mlog.String("channel", plan.Segment.Channel),
 			mlog.Int64("from", plan.From),
 			mlog.Int64("to", plan.To),
-			mlog.Int64("segmentID", plan.Segment.GetID()),
+			mlog.Int64("segmentID", plan.Segment.ID),
 		)
 		actions := make([]task.Action, 0)
-		loadAction := task.NewSegmentActionWithScope(plan.To, task.ActionTypeGrow, plan.Segment.GetInsertChannel(), plan.Segment.GetID(), querypb.DataScope_Historical, int(plan.Segment.GetNumOfRows()))
+		loadAction := task.NewSegmentActionWithScope(plan.To, task.ActionTypeGrow, plan.Segment.Channel, plan.Segment.ID, querypb.DataScope_Historical, int(plan.Segment.NumOfRows))
 		actions = append(actions, loadAction)
 		if !copyMode {
 			// if in copy mode, the release action will be skip
-			releaseAction := task.NewSegmentActionWithScope(plan.From, task.ActionTypeReduce, plan.Segment.GetInsertChannel(), plan.Segment.GetID(), querypb.DataScope_Historical, int(plan.Segment.GetNumOfRows()))
+			releaseAction := task.NewSegmentActionWithScope(plan.From, task.ActionTypeReduce, plan.Segment.Channel, plan.Segment.ID, querypb.DataScope_Historical, int(plan.Segment.NumOfRows))
 			actions = append(actions, releaseAction)
 		}
 
@@ -163,10 +164,10 @@ func (s *Server) balanceSegments(ctx context.Context,
 		if err != nil {
 			mlog.Warn(context.TODO(), "create segment task for balance failed",
 				mlog.Int64("replica", plan.Replica.GetID()),
-				mlog.String("channel", plan.Segment.InsertChannel),
+				mlog.String("channel", plan.Segment.Channel),
 				mlog.Int64("from", plan.From),
 				mlog.Int64("to", plan.To),
-				mlog.Int64("segmentID", plan.Segment.GetID()),
+				mlog.Int64("segmentID", plan.Segment.ID),
 				mlog.Err(err),
 			)
 			continue
@@ -177,7 +178,7 @@ func (s *Server) balanceSegments(ctx context.Context,
 		err = s.taskScheduler.Add(t)
 		if err != nil {
 			t.Cancel(err)
-			mlog.Info(context.TODO(), "skip balance segment task", mlog.Int64("segmentID", plan.Segment.GetID()), mlog.Err(err))
+			mlog.Info(context.TODO(), "skip balance segment task", mlog.Int64("segmentID", plan.Segment.ID), mlog.Err(err))
 			continue
 		}
 		tasks = append(tasks, t)

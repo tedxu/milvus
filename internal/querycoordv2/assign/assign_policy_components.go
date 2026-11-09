@@ -33,12 +33,6 @@ type nodeFilter interface {
 	FilterNodes(ctx context.Context, nodes []int64, forceAssign bool) []int64
 }
 
-// segmentScoreCalculator calculates the score of a segment
-type segmentScoreCalculator interface {
-	// CalculateScore returns the score of a segment (e.g., row count)
-	CalculateScore(segment *meta.Segment) int64
-}
-
 // channelScoreCalculator calculates the score of a channel
 type channelScoreCalculator interface {
 	// CalculateScore returns the score of a channel

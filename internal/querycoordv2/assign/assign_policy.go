@@ -22,11 +22,46 @@ import (
 
 	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
 	"github.com/milvus-io/milvus/internal/querycoordv2/meta"
+	"github.com/milvus-io/milvus/pkg/v3/proto/datapb"
 )
+
+// SegmentRef is a transient view of one segment for one plan computation.
+// It is built per plan and never stored.
+type SegmentRef struct {
+	ID, CollectionID, PartitionID, NumOfRows int64
+	Channel                                  string
+	Level                                    datapb.SegmentLevel
+	// From is the node the segment is on; 0 when placing a target segment.
+	From int64
+}
+
+// SegmentRefFromInfo builds the ref of a segment on node from, or of a
+// target segment when from is 0.
+func SegmentRefFromInfo(info *datapb.SegmentInfo, from int64) SegmentRef {
+	return SegmentRef{
+		ID:           info.GetID(),
+		CollectionID: info.GetCollectionID(),
+		PartitionID:  info.GetPartitionID(),
+		NumOfRows:    info.GetNumOfRows(),
+		Channel:      info.GetInsertChannel(),
+		Level:        info.GetLevel(),
+		From:         from,
+	}
+}
+
+// SegmentRefsFromDist builds the refs of distribution entries, with From
+// set to each entry's node.
+func SegmentRefsFromDist(segments []*meta.Segment) []SegmentRef {
+	refs := make([]SegmentRef, 0, len(segments))
+	for _, segment := range segments {
+		refs = append(refs, SegmentRefFromInfo(segment.SegmentInfo, segment.Node))
+	}
+	return refs
+}
 
 // SegmentAssignPlan represents a plan to assign a segment to a node
 type SegmentAssignPlan struct {
-	Segment      *meta.Segment
+	Segment      SegmentRef
 	Replica      *meta.Replica
 	From         int64 // -1 if empty
 	To           int64
@@ -62,7 +97,7 @@ func (chanPlan *ChannelAssignPlan) String() string {
 type AssignPolicy interface {
 	// AssignSegment assigns segments to nodes based on the policy
 	// Returns a list of segment assignment plans
-	AssignSegment(ctx context.Context, collectionID int64, segments []*meta.Segment, nodes []int64, forceAssign bool) []SegmentAssignPlan
+	AssignSegment(ctx context.Context, collectionID int64, segments []SegmentRef, nodes []int64, forceAssign bool) []SegmentAssignPlan
 
 	// AssignChannel assigns channels to nodes based on the policy
 	// Returns a list of channel assignment plans
@@ -76,7 +111,7 @@ type ScoreAwareAssignPolicy interface {
 	AssignPolicy
 	ConvertToNodeItemsBySegment(collectionID int64, nodes []int64) map[int64]*NodeItem
 	ConvertToNodeItemsByChannel(collectionID int64, nodes []int64) map[int64]*NodeItem
-	CalculateSegmentScore(s *meta.Segment) float64
+	CalculateSegmentScore(s SegmentRef) float64
 	CalculateChannelScore(ch *meta.DmChannel, currentCollection int64) float64
 }
 

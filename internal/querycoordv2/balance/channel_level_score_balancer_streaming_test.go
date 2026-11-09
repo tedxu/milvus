@@ -81,7 +81,7 @@ func TestChannelLevelScoreBalancer_StreamingRWSQDoesNotBlockSegmentBalance(t *te
 	for _, plan := range segmentPlans {
 		require.False(t, rwSQNodes.Contain(plan.From))
 		require.False(t, rwSQNodes.Contain(plan.To))
-		channelRWNodes := typeutil.NewUniqueSet(replica.GetChannelRWNodes(plan.Segment.GetInsertChannel())...)
+		channelRWNodes := typeutil.NewUniqueSet(replica.GetChannelRWNodes(plan.Segment.Channel)...)
 		require.True(t, channelRWNodes.Contain(plan.From))
 		require.True(t, channelRWNodes.Contain(plan.To))
 	}
@@ -121,7 +121,7 @@ func TestChannelLevelScoreBalancer_StreamingTrueSegmentOutboundFirst(t *testing.
 
 	require.Empty(t, channelPlans)
 	require.Len(t, segmentPlans, 1)
-	require.Equal(t, int64(1), segmentPlans[0].Segment.GetID())
+	require.Equal(t, int64(1), segmentPlans[0].Segment.ID)
 	require.Equal(t, int64(339), segmentPlans[0].From)
 	require.Contains(t, replica.GetChannelRWNodes("channel1"), segmentPlans[0].To)
 }
@@ -163,7 +163,7 @@ func TestChannelLevelScoreBalancer_StreamingEmptyOutboundPlanFallsBackToSegmentB
 
 	require.Empty(t, channelPlans)
 	require.Len(t, segmentPlans, 1)
-	require.NotEqual(t, int64(1), segmentPlans[0].Segment.GetID())
+	require.NotEqual(t, int64(1), segmentPlans[0].Segment.ID)
 	require.Equal(t, int64(344), segmentPlans[0].From)
 	require.Equal(t, int64(345), segmentPlans[0].To)
 }

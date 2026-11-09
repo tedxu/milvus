@@ -185,13 +185,13 @@ func (b *StoppingBalancer) genSegmentPlan(ctx context.Context, br *balanceReport
 		br.AddRecord(StrRecordf("found %d movable segments on stopping node %d to be reassigned", len(segments), nodeID))
 
 		// Assign these segments to active nodes
-		plans := b.assignPolicy.AssignSegment(ctx, replica.GetCollectionID(), segments, rwNodes, false)
+		plans := b.assignPolicy.AssignSegment(ctx, replica.GetCollectionID(), assign.SegmentRefsFromDist(segments), rwNodes, false)
 
 		// Set the source node and replica for each plan
 		for i := range plans {
 			plans[i].From = nodeID
 			plans[i].Replica = replica
-			br.AddDetailRecord(StrRecordf("segment %d: node %d -> node %d", plans[i].Segment.GetID(), nodeID, plans[i].To))
+			br.AddDetailRecord(StrRecordf("segment %d: node %d -> node %d", plans[i].Segment.ID, nodeID, plans[i].To))
 		}
 
 		segmentPlans = append(segmentPlans, plans...)

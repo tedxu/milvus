@@ -54,7 +54,7 @@ func newRoundRobinAssignPolicy(
 func (p *RoundRobinAssignPolicy) AssignSegment(
 	ctx context.Context,
 	collectionID int64,
-	segments []*meta.Segment,
+	segments []SegmentRef,
 	nodes []int64,
 	forceAssign bool,
 ) []SegmentAssignPlan {

@@ -550,15 +550,13 @@ func (c *SegmentChecker) createSegmentLoadTasks(ctx context.Context, segments []
 			rwNodes = replica.GetRWNodes()
 		}
 
-		segmentInfos := lo.Map(segments, func(s *datapb.SegmentInfo, _ int) *meta.Segment {
-			return &meta.Segment{
-				SegmentInfo: s,
-			}
+		refs := lo.Map(segments, func(s *datapb.SegmentInfo, _ int) assign.SegmentRef {
+			return assign.SegmentRefFromInfo(s, 0)
 		})
-		shardPlans := c.assignPolicy.AssignSegment(ctx, replica.GetCollectionID(), segmentInfos, rwNodes, true)
+		shardPlans := c.assignPolicy.AssignSegment(ctx, replica.GetCollectionID(), refs, rwNodes, true)
 		for i := range shardPlans {
 			shardPlans[i].Replica = replica
-			shardPlans[i].LoadPriority = priorityMap[shardPlans[i].Segment.GetID()]
+			shardPlans[i].LoadPriority = priorityMap[shardPlans[i].Segment.ID]
 		}
 		plans = append(plans, shardPlans...)
 	}

@@ -229,8 +229,8 @@ func (suite *StoppingBalancerTestSuite) TestBalanceReplica_WithRONodes() {
 	mockPolicy.EXPECT().AssignSegment(mock.Anything, mock.Anything, mock.Anything, mock.MatchedBy(func(nodes []int64) bool {
 		return len(nodes) == 2 && nodes[0] == 1 && nodes[1] == 2 // RW nodes
 	}), mock.Anything).Return([]assign.SegmentAssignPlan{
-		{Segment: segments[0], To: 1}, // Move segment 101 from node 3 to node 1
-		{Segment: segments[1], To: 2}, // Move segment 102 from node 4 to node 2
+		{Segment: assign.SegmentRefFromInfo(segments[0].SegmentInfo, segments[0].Node), To: 1}, // Move segment 101 from node 3 to node 1
+		{Segment: assign.SegmentRefFromInfo(segments[1].SegmentInfo, segments[1].Node), To: 2}, // Move segment 102 from node 4 to node 2
 	}).Maybe() // May or may not be called depending on channel balance
 
 	// Mock channel assignment - Only node 3 has a channel, so called once

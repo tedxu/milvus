@@ -24,7 +24,7 @@ import (
 // rowCountCostModel calculates the cost based on row count distribution across nodes.
 // A lower cost indicates a more balanced distribution of rows.
 type rowCountCostModel struct {
-	nodeSegments map[int64][]*meta.Segment
+	nodeSegments map[int64][]assign.SegmentRef
 }
 
 // cost calculates the normalized cost of the current row distribution.
@@ -39,7 +39,7 @@ func (m *rowCountCostModel) cost() float64 {
 	for node, segments := range m.nodeSegments {
 		rowCount := 0
 		for _, segment := range segments {
-			rowCount += int(segment.GetNumOfRows())
+			rowCount += int(segment.NumOfRows)
 		}
 		totalRowCount += rowCount
 		nodesRowCount[node] = rowCount
@@ -67,7 +67,7 @@ func (m *rowCountCostModel) cost() float64 {
 // segmentCountCostModel calculates the cost based on segment count distribution across nodes.
 // A lower cost indicates a more balanced distribution of segments.
 type segmentCountCostModel struct {
-	nodeSegments map[int64][]*meta.Segment
+	nodeSegments map[int64][]assign.SegmentRef
 }
 
 // cost calculates the normalized cost of the current segment distribution.
@@ -118,11 +118,11 @@ func cmpCost(f1, f2 float64) int {
 // Each generator uses a different optimization strategy to generate segment assignment plans.
 type generator interface {
 	setPlans(plans []assign.SegmentAssignPlan)
-	setReplicaNodeSegments(replicaNodeSegments map[int64][]*meta.Segment)
-	setGlobalNodeSegments(globalNodeSegments map[int64][]*meta.Segment)
+	setReplicaNodeSegments(replicaNodeSegments map[int64][]assign.SegmentRef)
+	setGlobalNodeSegments(globalNodeSegments map[int64][]assign.SegmentRef)
 	setCost(cost float64)
-	getReplicaNodeSegments() map[int64][]*meta.Segment
-	getGlobalNodeSegments() map[int64][]*meta.Segment
+	getReplicaNodeSegments() map[int64][]assign.SegmentRef
+	getGlobalNodeSegments() map[int64][]assign.SegmentRef
 	getCost() float64
 	generatePlans() []assign.SegmentAssignPlan
 }
@@ -132,8 +132,8 @@ type generator interface {
 type basePlanGenerator struct {
 	plans                        []assign.SegmentAssignPlan
 	currClusterCost              float64
-	replicaNodeSegments          map[int64][]*meta.Segment
-	globalNodeSegments           map[int64][]*meta.Segment
+	replicaNodeSegments          map[int64][]assign.SegmentRef
+	globalNodeSegments           map[int64][]assign.SegmentRef
 	rowCountCostWeight           float64
 	globalRowCountCostWeight     float64
 	segmentCountCostWeight       float64
@@ -154,11 +154,11 @@ func (g *basePlanGenerator) setPlans(plans []assign.SegmentAssignPlan) {
 	g.plans = plans
 }
 
-func (g *basePlanGenerator) setReplicaNodeSegments(replicaNodeSegments map[int64][]*meta.Segment) {
+func (g *basePlanGenerator) setReplicaNodeSegments(replicaNodeSegments map[int64][]assign.SegmentRef) {
 	g.replicaNodeSegments = replicaNodeSegments
 }
 
-func (g *basePlanGenerator) setGlobalNodeSegments(globalNodeSegments map[int64][]*meta.Segment) {
+func (g *basePlanGenerator) setGlobalNodeSegments(globalNodeSegments map[int64][]assign.SegmentRef) {
 	g.globalNodeSegments = globalNodeSegments
 }
 
@@ -166,11 +166,11 @@ func (g *basePlanGenerator) setCost(cost float64) {
 	g.currClusterCost = cost
 }
 
-func (g *basePlanGenerator) getReplicaNodeSegments() map[int64][]*meta.Segment {
+func (g *basePlanGenerator) getReplicaNodeSegments() map[int64][]assign.SegmentRef {
 	return g.replicaNodeSegments
 }
 
-func (g *basePlanGenerator) getGlobalNodeSegments() map[int64][]*meta.Segment {
+func (g *basePlanGenerator) getGlobalNodeSegments() map[int64][]assign.SegmentRef {
 	return g.globalNodeSegments
 }
 
@@ -180,14 +180,14 @@ func (g *basePlanGenerator) getCost() float64 {
 
 // applyPlans applies the given segment assignment plans to a node-segments map,
 // returning a new map with the updated distribution.
-func (g *basePlanGenerator) applyPlans(nodeSegments map[int64][]*meta.Segment, plans []assign.SegmentAssignPlan) map[int64][]*meta.Segment {
-	newCluster := make(map[int64][]*meta.Segment)
+func (g *basePlanGenerator) applyPlans(nodeSegments map[int64][]assign.SegmentRef, plans []assign.SegmentAssignPlan) map[int64][]assign.SegmentRef {
+	newCluster := make(map[int64][]assign.SegmentRef)
 	for k, v := range nodeSegments {
 		newCluster[k] = append(newCluster[k], v...)
 	}
 	for _, p := range plans {
 		for i, s := range newCluster[p.From] {
-			if s.GetID() == p.Segment.ID {
+			if s.ID == p.Segment.ID {
 				newCluster[p.From] = append(newCluster[p.From][:i], newCluster[p.From][i+1:]...)
 				break
 			}
@@ -199,7 +199,7 @@ func (g *basePlanGenerator) applyPlans(nodeSegments map[int64][]*meta.Segment, p
 
 // calClusterCost calculates the total weighted cost of the cluster based on both
 // replica-level and global-level segment distributions.
-func (g *basePlanGenerator) calClusterCost(replicaNodeSegments, globalNodeSegments map[int64][]*meta.Segment) float64 {
+func (g *basePlanGenerator) calClusterCost(replicaNodeSegments, globalNodeSegments map[int64][]assign.SegmentRef) float64 {
 	replicaRowCountCostModel, replicaSegmentCountCostModel := &rowCountCostModel{replicaNodeSegments}, &segmentCountCostModel{replicaNodeSegments}
 	globalRowCountCostModel, globalSegmentCountCostModel := &rowCountCostModel{globalNodeSegments}, &segmentCountCostModel{globalNodeSegments}
 	replicaCost1, replicaCost2 := replicaRowCountCostModel.cost(), replicaSegmentCountCostModel.cost()
@@ -218,7 +218,7 @@ func (g *basePlanGenerator) mergePlans(curr []assign.SegmentAssignPlan, inc []as
 	processed := typeutil.NewSet[int]()
 	for _, p := range curr {
 		newPlan, idx, has := lo.FindIndexOf(inc, func(newPlan assign.SegmentAssignPlan) bool {
-			return newPlan.Segment.GetID() == p.Segment.GetID() && newPlan.From == p.To
+			return newPlan.Segment.ID == p.Segment.ID && newPlan.From == p.To
 		})
 
 		if has {
@@ -266,7 +266,7 @@ func (g *rowCountBasedPlanGenerator) generatePlans() []assign.SegmentAssignPlan 
 	type nodeWithRowCount struct {
 		id       int64
 		count    int
-		segments []*meta.Segment
+		segments []assign.SegmentRef
 	}
 
 	if g.currClusterCost == 0 {
@@ -280,7 +280,7 @@ func (g *rowCountBasedPlanGenerator) generatePlans() []assign.SegmentAssignPlan 
 	for node, segments := range g.replicaNodeSegments {
 		rowCount := 0
 		for _, segment := range nodeSegments[node] {
-			rowCount += int(segment.GetNumOfRows())
+			rowCount += int(segment.NumOfRows)
 		}
 		nodesWithRowCount = append(nodesWithRowCount, &nodeWithRowCount{
 			id:       node,
@@ -313,10 +313,10 @@ func (g *rowCountBasedPlanGenerator) generatePlans() []assign.SegmentAssignPlan 
 			g.currClusterCost = newCost
 			g.replicaNodeSegments = newCluster
 			g.globalNodeSegments = newGlobalCluster
-			maxNode.count -= int(segment.GetNumOfRows())
-			minNode.count += int(segment.GetNumOfRows())
+			maxNode.count -= int(segment.NumOfRows)
+			minNode.count += int(segment.NumOfRows)
 			for n, segment := range maxNode.segments {
-				if segment.GetID() == plan.Segment.ID {
+				if segment.ID == plan.Segment.ID {
 					maxNode.segments = append(maxNode.segments[:n], maxNode.segments[n+1:]...)
 					break
 				}
@@ -358,7 +358,7 @@ func (g *segmentCountBasedPlanGenerator) generatePlans() []assign.SegmentAssignP
 	type nodeWithSegmentCount struct {
 		id       int64
 		count    int
-		segments []*meta.Segment
+		segments []assign.SegmentRef
 	}
 
 	if g.currClusterCost == 0 {
@@ -405,7 +405,7 @@ func (g *segmentCountBasedPlanGenerator) generatePlans() []assign.SegmentAssignP
 			maxNode.count -= 1
 			minNode.count += 1
 			for n, segment := range maxNode.segments {
-				if segment.GetID() == plan.Segment.ID {
+				if segment.ID == plan.Segment.ID {
 					maxNode.segments = append(maxNode.segments[:n], maxNode.segments[n+1:]...)
 					break
 				}
@@ -575,15 +575,15 @@ func (b *MultiTargetBalancer) balanceSegments(ctx context.Context, br *balanceRe
 // multiple optimization strategies sequentially to find an improved distribution.
 func (b *MultiTargetBalancer) genSegmentPlan(ctx context.Context, replica *meta.Replica, rwNodes []int64) []assign.SegmentAssignPlan {
 	// get segments distribution on replica level and global level
-	nodeSegments := make(map[int64][]*meta.Segment)
-	globalNodeSegments := make(map[int64][]*meta.Segment)
+	nodeSegments := make(map[int64][]assign.SegmentRef)
+	globalNodeSegments := make(map[int64][]assign.SegmentRef)
 	for _, node := range rwNodes {
 		dist := b.dist.SegmentDistManager.GetByFilter(meta.WithCollectionID(replica.GetCollectionID()), meta.WithNodeID(node))
 		segments := lo.Filter(dist, func(segment *meta.Segment, _ int) bool {
 			return b.targetMgr.CanSegmentBeMoved(ctx, segment.GetCollectionID(), segment.GetID())
 		})
-		nodeSegments[node] = segments
-		globalNodeSegments[node] = b.dist.SegmentDistManager.GetByFilter(meta.WithNodeID(node))
+		nodeSegments[node] = assign.SegmentRefsFromDist(segments)
+		globalNodeSegments[node] = assign.SegmentRefsFromDist(b.dist.SegmentDistManager.GetByFilter(meta.WithNodeID(node)))
 	}
 
 	plans := b.genPlanByDistributions(nodeSegments, globalNodeSegments)
@@ -597,7 +597,7 @@ func (b *MultiTargetBalancer) genSegmentPlan(ctx context.Context, replica *meta.
 // It creates 5 generators: row count (replica), row count (global), segment count (replica),
 // segment count (global), and random. These generators run sequentially, each building upon
 // the previous results to progressively improve the distribution.
-func (b *MultiTargetBalancer) genPlanByDistributions(nodeSegments, globalNodeSegments map[int64][]*meta.Segment) []assign.SegmentAssignPlan {
+func (b *MultiTargetBalancer) genPlanByDistributions(nodeSegments, globalNodeSegments map[int64][]assign.SegmentRef) []assign.SegmentAssignPlan {
 	// create generators
 	// we have 3 types of generators: row count, segment count, random
 	// for row count based and segment count based generator, we have 2 types of generators: replica level and global level

@@ -132,18 +132,18 @@ func (suite *ChannelLevelScoreBalancerTestSuite) TestAssignSegment() {
 				{
 					// as assign segments is used while loading collection,
 					// all assignPlan should have weight equal to 1(HIGH PRIORITY)
-					{Segment: &meta.Segment{SegmentInfo: &datapb.SegmentInfo{
+					{Segment: assign.SegmentRefFromInfo(&datapb.SegmentInfo{
 						ID: 3, NumOfRows: 15,
 						CollectionID: 1,
-					}}, From: -1, To: 1},
-					{Segment: &meta.Segment{SegmentInfo: &datapb.SegmentInfo{
+					}, 0), From: -1, To: 1},
+					{Segment: assign.SegmentRefFromInfo(&datapb.SegmentInfo{
 						ID: 2, NumOfRows: 10,
 						CollectionID: 1,
-					}}, From: -1, To: 3},
-					{Segment: &meta.Segment{SegmentInfo: &datapb.SegmentInfo{
+					}, 0), From: -1, To: 3},
+					{Segment: assign.SegmentRefFromInfo(&datapb.SegmentInfo{
 						ID: 1, NumOfRows: 5,
 						CollectionID: 1,
-					}}, From: -1, To: 2},
+					}, 0), From: -1, To: 2},
 				},
 			},
 		},
@@ -184,9 +184,9 @@ func (suite *ChannelLevelScoreBalancerTestSuite) TestAssignSegment() {
 			segmentCnts:   []int{0, 0, 0},
 			expectPlans: [][]assign.SegmentAssignPlan{
 				{
-					{Segment: &meta.Segment{SegmentInfo: &datapb.SegmentInfo{ID: 9, NumOfRows: 15, CollectionID: 1}}, From: -1, To: 3},
-					{Segment: &meta.Segment{SegmentInfo: &datapb.SegmentInfo{ID: 8, NumOfRows: 10, CollectionID: 1}}, From: -1, To: 2},
-					{Segment: &meta.Segment{SegmentInfo: &datapb.SegmentInfo{ID: 7, NumOfRows: 5, CollectionID: 1}}, From: -1, To: 1},
+					{Segment: assign.SegmentRefFromInfo(&datapb.SegmentInfo{ID: 9, NumOfRows: 15, CollectionID: 1}, 0), From: -1, To: 3},
+					{Segment: assign.SegmentRefFromInfo(&datapb.SegmentInfo{ID: 8, NumOfRows: 10, CollectionID: 1}, 0), From: -1, To: 2},
+					{Segment: assign.SegmentRefFromInfo(&datapb.SegmentInfo{ID: 7, NumOfRows: 5, CollectionID: 1}, 0), From: -1, To: 1},
 				},
 			},
 		},
@@ -225,12 +225,12 @@ func (suite *ChannelLevelScoreBalancerTestSuite) TestAssignSegment() {
 				// much more than node3, but following assignment will still assign segment based on [10,20,40]
 				// rather than [70,70,40], this flaw will be mitigated by balance process and maybe fixed in the later versions
 				{
-					{Segment: &meta.Segment{SegmentInfo: &datapb.SegmentInfo{ID: 4, NumOfRows: 60, CollectionID: 1}}, From: -1, To: 1},
-					{Segment: &meta.Segment{SegmentInfo: &datapb.SegmentInfo{ID: 5, NumOfRows: 50, CollectionID: 1}}, From: -1, To: 2},
+					{Segment: assign.SegmentRefFromInfo(&datapb.SegmentInfo{ID: 4, NumOfRows: 60, CollectionID: 1}, 0), From: -1, To: 1},
+					{Segment: assign.SegmentRefFromInfo(&datapb.SegmentInfo{ID: 5, NumOfRows: 50, CollectionID: 1}, 0), From: -1, To: 2},
 				},
 				{
-					{Segment: &meta.Segment{SegmentInfo: &datapb.SegmentInfo{ID: 6, NumOfRows: 15, CollectionID: 2}}, From: -1, To: 1},
-					{Segment: &meta.Segment{SegmentInfo: &datapb.SegmentInfo{ID: 7, NumOfRows: 10, CollectionID: 2}}, From: -1, To: 2},
+					{Segment: assign.SegmentRefFromInfo(&datapb.SegmentInfo{ID: 6, NumOfRows: 15, CollectionID: 2}, 0), From: -1, To: 1},
+					{Segment: assign.SegmentRefFromInfo(&datapb.SegmentInfo{ID: 7, NumOfRows: 10, CollectionID: 2}, 0), From: -1, To: 2},
 				},
 			},
 		},
@@ -255,7 +255,7 @@ func (suite *ChannelLevelScoreBalancerTestSuite) TestAssignSegment() {
 				suite.balancer.nodeManager.Add(nodeInfo)
 			}
 			for i := range c.collectionIDs {
-				plans := balancer.GetAssignPolicy().AssignSegment(ctx, c.collectionIDs[i], c.assignments[i], c.nodes, false)
+				plans := balancer.GetAssignPolicy().AssignSegment(ctx, c.collectionIDs[i], assign.SegmentRefsFromDist(c.assignments[i]), c.nodes, false)
 				if c.unstableAssignment {
 					assertSegmentPlanNumAndTargetNodeMatch(&suite.Suite, c.expectPlans[i], plans)
 				} else {
@@ -316,7 +316,7 @@ func (suite *ChannelLevelScoreBalancerTestSuite) TestAssignSegmentWithGrowing() 
 			NumOfGrowingRows: 50,
 		},
 	})
-	plans := balancer.GetAssignPolicy().AssignSegment(ctx, 1, toAssign, lo.Keys(distributions), false)
+	plans := balancer.GetAssignPolicy().AssignSegment(ctx, 1, assign.SegmentRefsFromDist(toAssign), lo.Keys(distributions), false)
 	for _, p := range plans {
 		suite.Equal(int64(2), p.To)
 	}
@@ -360,7 +360,7 @@ func (suite *ChannelLevelScoreBalancerTestSuite) TestBalanceOneRound() {
 				},
 			},
 			expectPlans: []assign.SegmentAssignPlan{
-				{Segment: &meta.Segment{SegmentInfo: &datapb.SegmentInfo{ID: 2, CollectionID: 1, NumOfRows: 20}, Node: 2}, From: 2, To: 1, Replica: newReplicaDefaultRG(1)},
+				{Segment: assign.SegmentRefFromInfo(&datapb.SegmentInfo{ID: 2, CollectionID: 1, NumOfRows: 20}, 0), From: 2, To: 1, Replica: newReplicaDefaultRG(1)},
 			},
 			expectChannelPlans: []assign.ChannelAssignPlan{},
 		},
@@ -496,10 +496,7 @@ func (suite *ChannelLevelScoreBalancerTestSuite) TestBalanceMultiRound() {
 		expectPlans: [][]assign.SegmentAssignPlan{
 			{
 				{
-					Segment: &meta.Segment{
-						SegmentInfo: &datapb.SegmentInfo{ID: 3, CollectionID: 1, NumOfRows: 20},
-						Node:        2,
-					}, From: 2, To: 3, Replica: newReplicaDefaultRG(1),
+					Segment: assign.SegmentRefFromInfo(&datapb.SegmentInfo{ID: 3, CollectionID: 1, NumOfRows: 20}, 2), From: 2, To: 3, Replica: newReplicaDefaultRG(1),
 				},
 			},
 			{},

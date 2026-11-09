@@ -44,28 +44,28 @@ func CreateSegmentTasksFromPlans(ctx context.Context, source task.Source, timeou
 	for _, p := range plans {
 		actions := make([]task.Action, 0)
 		if p.To != -1 {
-			action := task.NewSegmentActionWithScope(p.To, task.ActionTypeGrow, p.Segment.GetInsertChannel(), p.Segment.GetID(), querypb.DataScope_Historical, int(p.Segment.GetNumOfRows()))
+			action := task.NewSegmentActionWithScope(p.To, task.ActionTypeGrow, p.Segment.Channel, p.Segment.ID, querypb.DataScope_Historical, int(p.Segment.NumOfRows))
 			actions = append(actions, action)
 		}
 		if p.From != -1 {
-			action := task.NewSegmentActionWithScope(p.From, task.ActionTypeReduce, p.Segment.GetInsertChannel(), p.Segment.GetID(), querypb.DataScope_Historical, int(p.Segment.GetNumOfRows()))
+			action := task.NewSegmentActionWithScope(p.From, task.ActionTypeReduce, p.Segment.Channel, p.Segment.ID, querypb.DataScope_Historical, int(p.Segment.NumOfRows))
 			actions = append(actions, action)
 		}
 		t, err := task.NewSegmentTask(
 			ctx,
 			timeout,
 			source,
-			p.Segment.GetCollectionID(),
+			p.Segment.CollectionID,
 			p.Replica,
 			p.LoadPriority,
 			actions...,
 		)
 		if err != nil {
 			mlog.Warn(ctx, "create segment task from plan failed",
-				mlog.Int64("collection", p.Segment.GetCollectionID()),
-				mlog.FieldSegmentID(p.Segment.GetID()),
+				mlog.Int64("collection", p.Segment.CollectionID),
+				mlog.FieldSegmentID(p.Segment.ID),
 				mlog.Int64("replica", p.Replica.GetID()),
-				mlog.String("channel", p.Segment.GetInsertChannel()),
+				mlog.String("channel", p.Segment.Channel),
 				mlog.Int64("from", p.From),
 				mlog.Int64("to", p.To),
 				mlog.Err(err),
@@ -74,11 +74,11 @@ func CreateSegmentTasksFromPlans(ctx context.Context, source task.Source, timeou
 		}
 
 		mlog.Info(ctx, "create segment task",
-			mlog.Int64("collection", p.Segment.GetCollectionID()),
-			mlog.FieldSegmentID(p.Segment.GetID()),
+			mlog.Int64("collection", p.Segment.CollectionID),
+			mlog.FieldSegmentID(p.Segment.ID),
 			mlog.Int64("replica", p.Replica.GetID()),
-			mlog.String("channel", p.Segment.GetInsertChannel()),
-			mlog.String("level", p.Segment.GetLevel().String()),
+			mlog.String("channel", p.Segment.Channel),
+			mlog.String("level", p.Segment.Level.String()),
 			mlog.Int32("loadPriority", int32(p.LoadPriority)),
 			mlog.Int64("from", p.From),
 			mlog.Int64("to", p.To))

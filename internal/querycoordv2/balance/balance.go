@@ -161,9 +161,9 @@ func (b *RoundRobinBalancer) genSegmentPlan(ctx context.Context, replica *meta.R
 		return nil
 	}
 
-	segmentPlans := b.assignPolicy.AssignSegment(ctx, replica.GetCollectionID(), segmentsToMove, nodesWithLessSegment, false)
+	segmentPlans := b.assignPolicy.AssignSegment(ctx, replica.GetCollectionID(), assign.SegmentRefsFromDist(segmentsToMove), nodesWithLessSegment, false)
 	for i := range segmentPlans {
-		segmentPlans[i].From = segmentPlans[i].Segment.Node
+		segmentPlans[i].From = segmentPlans[i].Segment.From
 		segmentPlans[i].Replica = replica
 	}
 

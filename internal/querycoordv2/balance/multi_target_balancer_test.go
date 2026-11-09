@@ -9,7 +9,6 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github.com/milvus-io/milvus/internal/querycoordv2/assign"
-	"github.com/milvus-io/milvus/internal/querycoordv2/meta"
 	"github.com/milvus-io/milvus/pkg/v3/proto/datapb"
 	"github.com/milvus-io/milvus/pkg/v3/util/paramtable"
 	"github.com/milvus-io/milvus/pkg/v3/util/typeutil"
@@ -54,10 +53,10 @@ func (suite *MultiTargetBalancerTestSuite) TestRowCountCostModel() {
 	}
 
 	for i, c := range cases {
-		nodeSegments := make(map[int64][]*meta.Segment)
+		nodeSegments := make(map[int64][]assign.SegmentRef)
 		for _, v := range c {
 			nodeSegments[v.nodeID] = append(nodeSegments[v.nodeID],
-				&meta.Segment{SegmentInfo: &datapb.SegmentInfo{ID: v.segmentID, NumOfRows: v.rowCount}},
+				assign.SegmentRef{ID: v.segmentID, NumOfRows: v.rowCount},
 			)
 		}
 		model := &rowCountCostModel{nodeSegments: nodeSegments}
@@ -85,12 +84,12 @@ func (suite *MultiTargetBalancerTestSuite) TestSegmentCountCostModel() {
 		0,
 	}
 	for i, c := range cases {
-		nodeSegments := make(map[int64][]*meta.Segment)
+		nodeSegments := make(map[int64][]assign.SegmentRef)
 		for _, v := range c {
-			nodeSegments[v.nodeID] = make([]*meta.Segment, 0)
+			nodeSegments[v.nodeID] = make([]assign.SegmentRef, 0)
 			for j := 0; j < v.segmentCount; j++ {
 				nodeSegments[v.nodeID] = append(nodeSegments[v.nodeID],
-					&meta.Segment{SegmentInfo: &datapb.SegmentInfo{ID: int64(j)}},
+					assign.SegmentRef{ID: int64(j)},
 				)
 			}
 		}
@@ -123,14 +122,14 @@ func (suite *MultiTargetBalancerTestSuite) TestBaseGeneratorApplyPlans() {
 	}
 
 	for i := 0; i < len(casePlans); i++ {
-		nodeSegments := make(map[int64][]*meta.Segment)
+		nodeSegments := make(map[int64][]assign.SegmentRef)
 		appliedPlans := make([]assign.SegmentAssignPlan, 0)
 		d := distribution[i]
 		for i, nodeID := range d.nodeID {
-			nodeSegments[nodeID] = make([]*meta.Segment, 0)
+			nodeSegments[nodeID] = make([]assign.SegmentRef, 0)
 			for _, segmentID := range d.segments[i] {
 				nodeSegments[nodeID] = append(nodeSegments[nodeID],
-					&meta.Segment{SegmentInfo: &datapb.SegmentInfo{ID: segmentID}},
+					assign.SegmentRef{ID: segmentID},
 				)
 			}
 		}
@@ -138,7 +137,7 @@ func (suite *MultiTargetBalancerTestSuite) TestBaseGeneratorApplyPlans() {
 		p := casePlans[i]
 		for j := 0; j < len(p.segments); j++ {
 			appliedPlans = append(appliedPlans, assign.SegmentAssignPlan{
-				Segment: &meta.Segment{SegmentInfo: &datapb.SegmentInfo{ID: p.segments[i]}},
+				Segment: assign.SegmentRefFromInfo(&datapb.SegmentInfo{ID: p.segments[i]}, 0),
 				From:    p.from[i],
 				To:      p.to[i],
 			})
@@ -148,7 +147,7 @@ func (suite *MultiTargetBalancerTestSuite) TestBaseGeneratorApplyPlans() {
 		newNodeSegments := generator.applyPlans(nodeSegments, appliedPlans)
 		expected := expects[i]
 		for i := 0; i < len(expected.nodeID); i++ {
-			newSegmentIDs := lo.FlatMap(newNodeSegments[int64(i)], func(segment *meta.Segment, _ int) []int64 {
+			newSegmentIDs := lo.FlatMap(newNodeSegments[int64(i)], func(segment assign.SegmentRef, _ int) []int64 {
 				return []int64{segment.ID}
 			})
 			suite.ElementsMatch(expected.segments[i], newSegmentIDs)
@@ -181,14 +180,14 @@ func (suite *MultiTargetBalancerTestSuite) TestBaseGeneratorMergePlans() {
 		inc := make([]assign.SegmentAssignPlan, 0)
 		for j := 0; j < len(cases[i][0].segment); j++ {
 			curr = append(curr, assign.SegmentAssignPlan{
-				Segment: &meta.Segment{SegmentInfo: &datapb.SegmentInfo{ID: cases[i][0].segment[j]}},
+				Segment: assign.SegmentRefFromInfo(&datapb.SegmentInfo{ID: cases[i][0].segment[j]}, 0),
 				From:    cases[i][0].from[j],
 				To:      cases[i][0].to[j],
 			})
 		}
 		for j := 0; j < len(cases[i][1].segment); j++ {
 			inc = append(inc, assign.SegmentAssignPlan{
-				Segment: &meta.Segment{SegmentInfo: &datapb.SegmentInfo{ID: cases[i][1].segment[j]}},
+				Segment: assign.SegmentRefFromInfo(&datapb.SegmentInfo{ID: cases[i][1].segment[j]}, 0),
 				From:    cases[i][1].from[j],
 				To:      cases[i][1].to[j],
 			})
@@ -212,16 +211,16 @@ func (suite *MultiTargetBalancerTestSuite) TestBaseGeneratorMergePlans() {
 
 func (suite *MultiTargetBalancerTestSuite) TestRowCountPlanGenerator() {
 	cases := []struct {
-		nodeSegments    map[int64][]*meta.Segment
+		nodeSegments    map[int64][]assign.SegmentRef
 		expectPlanCount int
 		expectCost      float64
 	}{
 		// case 1
 		{
-			map[int64][]*meta.Segment{
+			map[int64][]assign.SegmentRef{
 				1: {
-					{SegmentInfo: &datapb.SegmentInfo{ID: 1, NumOfRows: 10}},
-					{SegmentInfo: &datapb.SegmentInfo{ID: 2, NumOfRows: 10}},
+					{ID: 1, NumOfRows: 10},
+					{ID: 2, NumOfRows: 10},
 				},
 				2: {},
 			},
@@ -230,12 +229,12 @@ func (suite *MultiTargetBalancerTestSuite) TestRowCountPlanGenerator() {
 		},
 		// case 2
 		{
-			map[int64][]*meta.Segment{
+			map[int64][]assign.SegmentRef{
 				1: {
-					{SegmentInfo: &datapb.SegmentInfo{ID: 1, NumOfRows: 10}},
+					{ID: 1, NumOfRows: 10},
 				},
 				2: {
-					{SegmentInfo: &datapb.SegmentInfo{ID: 2, NumOfRows: 10}},
+					{ID: 2, NumOfRows: 10},
 				},
 			},
 			0,
@@ -255,16 +254,16 @@ func (suite *MultiTargetBalancerTestSuite) TestRowCountPlanGenerator() {
 
 func (suite *MultiTargetBalancerTestSuite) TestSegmentCountPlanGenerator() {
 	cases := []struct {
-		nodeSegments    map[int64][]*meta.Segment
+		nodeSegments    map[int64][]assign.SegmentRef
 		expectPlanCount int
 		expectCost      float64
 	}{
 		// case 1
 		{
-			map[int64][]*meta.Segment{
+			map[int64][]assign.SegmentRef{
 				1: {
-					{SegmentInfo: &datapb.SegmentInfo{ID: 1, NumOfRows: 10}},
-					{SegmentInfo: &datapb.SegmentInfo{ID: 2, NumOfRows: 10}},
+					{ID: 1, NumOfRows: 10},
+					{ID: 2, NumOfRows: 10},
 				},
 				2: {},
 			},
@@ -273,12 +272,12 @@ func (suite *MultiTargetBalancerTestSuite) TestSegmentCountPlanGenerator() {
 		},
 		// case 2
 		{
-			map[int64][]*meta.Segment{
+			map[int64][]assign.SegmentRef{
 				1: {
-					{SegmentInfo: &datapb.SegmentInfo{ID: 1, NumOfRows: 10}},
+					{ID: 1, NumOfRows: 10},
 				},
 				2: {
-					{SegmentInfo: &datapb.SegmentInfo{ID: 2, NumOfRows: 10}},
+					{ID: 2, NumOfRows: 10},
 				},
 			},
 			0,
@@ -298,18 +297,18 @@ func (suite *MultiTargetBalancerTestSuite) TestSegmentCountPlanGenerator() {
 
 func (suite *MultiTargetBalancerTestSuite) TestRandomPlanGenerator() {
 	cases := []struct {
-		nodeSegments map[int64][]*meta.Segment
+		nodeSegments map[int64][]assign.SegmentRef
 		expectCost   float64
 	}{
 		// case 1
 		{
-			map[int64][]*meta.Segment{
+			map[int64][]assign.SegmentRef{
 				1: {
-					{SegmentInfo: &datapb.SegmentInfo{ID: 1, NumOfRows: 20}}, {SegmentInfo: &datapb.SegmentInfo{ID: 2, NumOfRows: 30}},
+					{ID: 1, NumOfRows: 20}, {ID: 2, NumOfRows: 30},
 				},
 				2: {
-					{SegmentInfo: &datapb.SegmentInfo{ID: 3, NumOfRows: 20}},
-					{SegmentInfo: &datapb.SegmentInfo{ID: 4, NumOfRows: 10}},
+					{ID: 3, NumOfRows: 20},
+					{ID: 4, NumOfRows: 10},
 				},
 			},
 			0,
@@ -326,18 +325,16 @@ func (suite *MultiTargetBalancerTestSuite) TestRandomPlanGenerator() {
 }
 
 func (suite *MultiTargetBalancerTestSuite) TestPlanNoConflict() {
-	nodeSegments := make(map[int64][]*meta.Segment)
+	nodeSegments := make(map[int64][]assign.SegmentRef)
 	totalCount := 0
 	// 10 nodes, at most 100 segments, at most 1000 rows
 	for i := 0; i < 10; i++ {
 		segNum := rand.Intn(99) + 1
 		for j := 0; j < segNum; j++ {
 			rowCount := rand.Intn(1000)
-			nodeSegments[int64(i)] = append(nodeSegments[int64(i)], &meta.Segment{
-				SegmentInfo: &datapb.SegmentInfo{
-					ID:        int64(i*1000 + j),
-					NumOfRows: int64(rowCount),
-				},
+			nodeSegments[int64(i)] = append(nodeSegments[int64(i)], assign.SegmentRef{
+				ID:        int64(i*1000 + j),
+				NumOfRows: int64(rowCount),
 			})
 			totalCount += rowCount
 		}

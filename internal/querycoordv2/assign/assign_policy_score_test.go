@@ -61,7 +61,7 @@ func TestScoreBasedAssignPolicy_AssignSegment_BasicFunctionality(t *testing.T) {
 	}
 
 	nodes := []int64{1, 2, 3}
-	plans := policy.AssignSegment(context.Background(), 100, segments, nodes, false)
+	plans := policy.AssignSegment(context.Background(), 100, SegmentRefsFromDist(segments), nodes, false)
 
 	assert.NotNil(t, plans)
 	assert.Equal(t, 3, len(plans))
@@ -112,7 +112,7 @@ func TestScoreBasedAssignPolicy_AssignSegment_PrefersLowScoreNode(t *testing.T) 
 	}
 
 	nodes := []int64{1, 2, 3}
-	plans := policy.AssignSegment(context.Background(), 100, segments, nodes, false)
+	plans := policy.AssignSegment(context.Background(), 100, SegmentRefsFromDist(segments), nodes, false)
 
 	assert.NotNil(t, plans)
 	assert.Equal(t, 1, len(plans))
@@ -136,7 +136,7 @@ func TestScoreBasedAssignPolicy_AssignSegment_EmptyNodes(t *testing.T) {
 	}
 	nodes := []int64{}
 
-	plans := policy.AssignSegment(context.Background(), 100, segments, nodes, false)
+	plans := policy.AssignSegment(context.Background(), 100, SegmentRefsFromDist(segments), nodes, false)
 
 	assert.Nil(t, plans)
 }
@@ -163,7 +163,7 @@ func TestScoreBasedAssignPolicy_AssignSegment_EmptySegments(t *testing.T) {
 	segments := []*meta.Segment{}
 	nodes := []int64{1}
 
-	plans := policy.AssignSegment(context.Background(), 100, segments, nodes, false)
+	plans := policy.AssignSegment(context.Background(), 100, SegmentRefsFromDist(segments), nodes, false)
 
 	assert.NotNil(t, plans)
 	assert.Equal(t, 0, len(plans))
@@ -195,11 +195,11 @@ func TestScoreBasedAssignPolicy_AssignSegment_ForceAssign(t *testing.T) {
 	nodes := []int64{1}
 
 	// Without force assign - should return nil (no normal nodes)
-	plans := policy.AssignSegment(context.Background(), 100, segments, nodes, false)
+	plans := policy.AssignSegment(context.Background(), 100, SegmentRefsFromDist(segments), nodes, false)
 	assert.Nil(t, plans)
 
 	// With force assign - should proceed
-	plansForced := policy.AssignSegment(context.Background(), 100, segments, nodes, true)
+	plansForced := policy.AssignSegment(context.Background(), 100, SegmentRefsFromDist(segments), nodes, true)
 	assert.NotNil(t, plansForced)
 	assert.Equal(t, 1, len(plansForced))
 	assert.Equal(t, int64(1), plansForced[0].To)
@@ -216,12 +216,7 @@ func TestScoreBasedAssignPolicy_CalculateSegmentScore(t *testing.T) {
 
 	policy := newScoreBasedAssignPolicy(nodeManager, mockScheduler, dist, metaMgr)
 
-	segment := &meta.Segment{
-		SegmentInfo: &datapb.SegmentInfo{
-			ID:        1,
-			NumOfRows: 1000,
-		},
-	}
+	segment := SegmentRef{ID: 1, NumOfRows: 1000}
 
 	score := policy.CalculateSegmentScore(segment)
 

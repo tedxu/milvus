@@ -159,9 +159,9 @@ func (b *RowCountBasedBalancer) genSegmentPlan(ctx context.Context, replica *met
 		return nil
 	}
 
-	segmentPlans := b.assignPolicy.AssignSegment(ctx, replica.GetCollectionID(), segmentsToMove, nodesWithLessRow, false)
+	segmentPlans := b.assignPolicy.AssignSegment(ctx, replica.GetCollectionID(), assign.SegmentRefsFromDist(segmentsToMove), nodesWithLessRow, false)
 	for i := range segmentPlans {
-		segmentPlans[i].From = segmentPlans[i].Segment.Node
+		segmentPlans[i].From = segmentPlans[i].Segment.From
 		segmentPlans[i].Replica = replica
 	}
 

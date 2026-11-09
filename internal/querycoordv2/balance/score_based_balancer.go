@@ -165,7 +165,7 @@ func (b *ScoreBasedBalancer) genSegmentPlan(ctx context.Context, br *balanceRepo
 			return segments[i].GetNumOfRows() < segments[j].GetNumOfRows()
 		})
 		for _, s := range segments {
-			segmentScore := b.assignPolicy.CalculateSegmentScore(s)
+			segmentScore := b.assignPolicy.CalculateSegmentScore(assign.SegmentRefFromInfo(s.SegmentInfo, s.Node))
 			br.AddRecord(StrRecordf("pick segment %d with score %f from node %d", s.ID, segmentScore, node))
 			segmentsToMove = append(segmentsToMove, s)
 			currentScore -= segmentScore
@@ -190,9 +190,9 @@ func (b *ScoreBasedBalancer) genSegmentPlan(ctx context.Context, br *balanceRepo
 		return nil
 	}
 
-	segmentPlans := b.GetAssignPolicy().AssignSegment(ctx, replica.GetCollectionID(), segmentsToMove, onlineNodes, false)
+	segmentPlans := b.GetAssignPolicy().AssignSegment(ctx, replica.GetCollectionID(), assign.SegmentRefsFromDist(segmentsToMove), onlineNodes, false)
 	for i := range segmentPlans {
-		segmentPlans[i].From = segmentPlans[i].Segment.Node
+		segmentPlans[i].From = segmentPlans[i].Segment.From
 		segmentPlans[i].Replica = replica
 	}
 

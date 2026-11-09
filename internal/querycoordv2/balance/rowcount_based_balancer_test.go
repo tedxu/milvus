@@ -128,7 +128,7 @@ func (suite *RowCountBasedBalancerTestSuite) TestBalance() {
 				},
 			},
 			expectPlans: []assign.SegmentAssignPlan{
-				{Segment: &meta.Segment{SegmentInfo: &datapb.SegmentInfo{ID: 2, CollectionID: 1, NumOfRows: 20}, Node: 2}, From: 2, To: 1, Replica: newReplicaDefaultRG(1)},
+				{Segment: assign.SegmentRefFromInfo(&datapb.SegmentInfo{ID: 2, CollectionID: 1, NumOfRows: 20}, 0), From: 2, To: 1, Replica: newReplicaDefaultRG(1)},
 			},
 			expectChannelPlans: []assign.ChannelAssignPlan{},
 		},
@@ -431,7 +431,7 @@ func (suite *RowCountBasedBalancerTestSuite) TestAssignSegmentWithGrowing() {
 			NumOfGrowingRows: 50,
 		},
 	})
-	plans := balancer.GetAssignPolicy().AssignSegment(ctx, 1, toAssign, lo.Keys(distributions), false)
+	plans := balancer.GetAssignPolicy().AssignSegment(ctx, 1, assign.SegmentRefsFromDist(toAssign), lo.Keys(distributions), false)
 	for _, p := range plans {
 		suite.Equal(int64(2), p.To)
 	}

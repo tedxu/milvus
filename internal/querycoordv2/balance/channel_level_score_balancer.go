@@ -196,7 +196,7 @@ func (b *ChannelLevelScoreBalancer) genSegmentPlanForOutboundNodes(ctx context.C
 		segments := lo.Filter(dist, func(segment *meta.Segment, _ int) bool {
 			return b.targetMgr.CanSegmentBeMoved(ctx, segment.GetCollectionID(), segment.GetID())
 		})
-		plans := b.GetAssignPolicy().AssignSegment(ctx, replica.GetCollectionID(), segments, onlineNodes, false)
+		plans := b.GetAssignPolicy().AssignSegment(ctx, replica.GetCollectionID(), assign.SegmentRefsFromDist(segments), onlineNodes, false)
 		for i := range plans {
 			plans[i].From = nodeID
 			plans[i].Replica = replica
@@ -246,7 +246,7 @@ func (b *ChannelLevelScoreBalancer) genSegmentPlan(ctx context.Context, br *bala
 		})
 		for _, s := range segments {
 			segmentsToMove = append(segmentsToMove, s)
-			currentScore -= b.assignPolicy.CalculateSegmentScore(s)
+			currentScore -= b.assignPolicy.CalculateSegmentScore(assign.SegmentRefFromInfo(s.SegmentInfo, s.Node))
 			if currentScore <= assignedScore {
 				break
 			}
@@ -262,9 +262,9 @@ func (b *ChannelLevelScoreBalancer) genSegmentPlan(ctx context.Context, br *bala
 		return nil
 	}
 
-	segmentPlans := b.GetAssignPolicy().AssignSegment(ctx, replica.GetCollectionID(), segmentsToMove, onlineNodes, false)
+	segmentPlans := b.GetAssignPolicy().AssignSegment(ctx, replica.GetCollectionID(), assign.SegmentRefsFromDist(segmentsToMove), onlineNodes, false)
 	for i := range segmentPlans {
-		segmentPlans[i].From = segmentPlans[i].Segment.Node
+		segmentPlans[i].From = segmentPlans[i].Segment.From
 		segmentPlans[i].Replica = replica
 	}
 

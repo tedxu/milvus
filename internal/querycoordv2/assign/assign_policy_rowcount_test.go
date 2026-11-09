@@ -70,7 +70,7 @@ func TestRowCountBasedAssignPolicy_AssignSegment_PriorityToLeastLoaded(t *testin
 	}
 
 	nodes := []int64{1, 2, 3}
-	plans := policy.AssignSegment(context.Background(), 100, segments, nodes, false)
+	plans := policy.AssignSegment(context.Background(), 100, SegmentRefsFromDist(segments), nodes, false)
 
 	assert.NotNil(t, plans)
 	assert.Equal(t, 1, len(plans))
@@ -111,7 +111,7 @@ func TestRowCountBasedAssignPolicy_AssignSegment_MultipleSegments(t *testing.T) 
 	}
 
 	nodes := []int64{1, 2}
-	plans := policy.AssignSegment(context.Background(), 100, segments, nodes, false)
+	plans := policy.AssignSegment(context.Background(), 100, SegmentRefsFromDist(segments), nodes, false)
 
 	assert.NotNil(t, plans)
 	assert.Equal(t, 4, len(plans))
@@ -160,17 +160,17 @@ func TestRowCountBasedAssignPolicy_AssignSegment_BatchLimitOnlyForBalance(t *tes
 	}
 
 	nodes := []int64{1, 2}
-	balancePlans := policy.AssignSegment(context.Background(), 100, segments, nodes, false)
+	balancePlans := policy.AssignSegment(context.Background(), 100, SegmentRefsFromDist(segments), nodes, false)
 	assert.Equal(t, 2, len(balancePlans))
 
 	for i := int64(1); i <= 2; i++ {
 		nodeManager.Get(i).SetState(session.NodeStateStopping)
 	}
 
-	balancePlans = policy.AssignSegment(context.Background(), 100, segments, nodes, false)
+	balancePlans = policy.AssignSegment(context.Background(), 100, SegmentRefsFromDist(segments), nodes, false)
 	assert.Nil(t, balancePlans)
 
-	forcePlans := policy.AssignSegment(context.Background(), 100, segments, nodes, true)
+	forcePlans := policy.AssignSegment(context.Background(), 100, SegmentRefsFromDist(segments), nodes, true)
 	assert.Equal(t, 5, len(forcePlans))
 }
 
@@ -186,7 +186,7 @@ func TestRowCountBasedAssignPolicy_AssignSegment_EmptyNodes(t *testing.T) {
 	}
 	nodes := []int64{}
 
-	plans := policy.AssignSegment(context.Background(), 100, segments, nodes, false)
+	plans := policy.AssignSegment(context.Background(), 100, SegmentRefsFromDist(segments), nodes, false)
 
 	assert.Nil(t, plans)
 }
@@ -427,7 +427,7 @@ func TestRowCountBasedAssignPolicy_AssignSegment_EmptySegments(t *testing.T) {
 	segments := []*meta.Segment{}
 	nodes := []int64{1}
 
-	plans := policy.AssignSegment(context.Background(), 100, segments, nodes, false)
+	plans := policy.AssignSegment(context.Background(), 100, SegmentRefsFromDist(segments), nodes, false)
 
 	assert.NotNil(t, plans)
 	assert.Equal(t, 0, len(plans))

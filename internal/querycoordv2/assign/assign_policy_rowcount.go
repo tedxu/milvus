@@ -101,7 +101,7 @@ func newRowCountBasedAssignPolicy(
 func (p *RowCountBasedAssignPolicy) AssignSegment(
 	ctx context.Context,
 	collectionID int64,
-	segments []*meta.Segment,
+	segments []SegmentRef,
 	nodes []int64,
 	forceAssign bool,
 ) []SegmentAssignPlan {
@@ -131,7 +131,7 @@ func (p *RowCountBasedAssignPolicy) AssignSegment(
 
 	// Sort segments by row count (descending)
 	sort.Slice(segments, func(i, j int) bool {
-		return segments[i].GetNumOfRows() > segments[j].GetNumOfRows()
+		return segments[i].NumOfRows > segments[j].NumOfRows
 	})
 
 	plans := make([]SegmentAssignPlan, 0, len(segments))
@@ -151,7 +151,7 @@ func (p *RowCountBasedAssignPolicy) AssignSegment(
 		}
 
 		// Update node's score and push back to queue
-		ni.AddCurrentScoreDelta(float64(s.GetNumOfRows()))
+		ni.AddCurrentScoreDelta(float64(s.NumOfRows))
 		queue.Push(ni)
 	}
 

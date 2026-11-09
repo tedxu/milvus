@@ -98,12 +98,10 @@ func (suite *AssignPolicyTestSuite) TestSegmentAssignPlan_String() {
 	replica := newTestReplica(1)
 
 	plan := SegmentAssignPlan{
-		Segment: &meta.Segment{
-			SegmentInfo: &datapb.SegmentInfo{
-				ID:           100,
-				CollectionID: 200,
-			},
-		},
+		Segment: SegmentRefFromInfo(&datapb.SegmentInfo{
+			ID:           100,
+			CollectionID: 200,
+		}, 0),
 		Replica:      replica,
 		From:         1,
 		To:           2,

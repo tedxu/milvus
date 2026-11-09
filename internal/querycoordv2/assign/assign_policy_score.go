@@ -124,7 +124,7 @@ func newScoreBasedAssignPolicy(
 func (p *ScoreBasedAssignPolicy) AssignSegment(
 	ctx context.Context,
 	collectionID int64,
-	segments []*meta.Segment,
+	segments []SegmentRef,
 	nodes []int64,
 	forceAssign bool,
 ) []SegmentAssignPlan {
@@ -156,14 +156,14 @@ func (p *ScoreBasedAssignPolicy) AssignSegment(
 
 	// Sort segments by row count (descending), with secondary sort by node's score
 	sort.Slice(segments, func(i, j int) bool {
-		if segments[i].GetNumOfRows() == segments[j].GetNumOfRows() {
-			node1 := nodeItemsMap[segments[i].Node]
-			node2 := nodeItemsMap[segments[j].Node]
+		if segments[i].NumOfRows == segments[j].NumOfRows {
+			node1 := nodeItemsMap[segments[i].From]
+			node2 := nodeItemsMap[segments[j].From]
 			if node1 != nil && node2 != nil {
 				return node1.getPriority() > node2.getPriority()
 			}
 		}
-		return segments[i].GetNumOfRows() > segments[j].GetNumOfRows()
+		return segments[i].NumOfRows > segments[j].NumOfRows
 	})
 
 	plans := make([]SegmentAssignPlan, 0, len(segments))
@@ -172,7 +172,7 @@ func (p *ScoreBasedAssignPolicy) AssignSegment(
 		targetNode := queue.Pop().(*NodeItem)
 
 		scoreChanges := p.CalculateSegmentScore(s)
-		sourceNode := nodeItemsMap[s.Node]
+		sourceNode := nodeItemsMap[s.From]
 
 		// If segment's node exists, check if there's enough benefit
 		if !forceAssign && sourceNode != nil {
@@ -299,8 +299,8 @@ func (p *ScoreBasedAssignPolicy) calculateScoreBySegment(
 }
 
 // calculateSegmentScore calculates the score of a segment
-func (p *ScoreBasedAssignPolicy) CalculateSegmentScore(s *meta.Segment) float64 {
-	return float64(s.GetNumOfRows()) * (1 + params.Params.QueryCoordCfg.GlobalRowCountFactor.GetAsFloat())
+func (p *ScoreBasedAssignPolicy) CalculateSegmentScore(s SegmentRef) float64 {
+	return float64(s.NumOfRows) * (1 + params.Params.QueryCoordCfg.GlobalRowCountFactor.GetAsFloat())
 }
 
 // AssignChannel assigns channels to nodes using score-based strategy
