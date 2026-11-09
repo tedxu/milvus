@@ -614,10 +614,15 @@ func (c *SegmentChecker) createSegmentReopenTasks(ctx context.Context, segments 
 
 func (c *SegmentChecker) createSegmentReduceTasks(ctx context.Context, segments []*meta.LoadedSegment, replica *meta.Replica, scope querypb.DataScope) []task.Task {
 	ret := make([]task.Task, 0, len(segments))
-	stored := storedSegments(c.dist.MetaView(), segments)
+	// A sealed release carries the store's rows; a segment the store no
+	// longer has carries 0. A growing release carries 0 rows: sealed row
+	// totals never counted growing rows, and after handoff the store's
+	// entry for the ID is the flushed segment.
+	stored := make([]*datapb.SegmentInfo, len(segments))
+	if scope == querypb.DataScope_Historical {
+		stored = storedSegments(c.dist.MetaView(), segments)
+	}
 	for i, s := range segments {
-		// A segment the store no longer has is released on its own channel
-		// with 0 rows.
 		action := task.NewSegmentActionWithScope(s.Node, task.ActionTypeReduce, s.GetInsertChannel(), s.GetID(), scope, int(stored[i].GetNumOfRows()))
 		task, err := task.NewSegmentTask(
 			ctx,
