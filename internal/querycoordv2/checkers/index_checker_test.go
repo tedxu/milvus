@@ -209,6 +209,8 @@ func (suite *IndexCheckerSuite) TestIndexInfoNotMatch() {
 	checker.dist.SegmentDistManager.Update(1, utils.CreateTestSegment(1, 1, 3, 1, 1, "test-insert-channel"))
 
 	// store
+	suite.putSegment(2, nil)
+	suite.putSegment(3, nil)
 	suite.putBuild(2, 1000, 5, commonpb.IndexState_InProgress)
 	// 1002 is not a live definition of the collection.
 	suite.putFinishedBuild(3, 1002, 6)
@@ -250,6 +252,8 @@ func (suite *IndexCheckerSuite) TestNoStoreRecordNoTask() {
 	// dist
 	checker.dist.SegmentDistManager.Update(1, utils.CreateTestSegment(1, 1, 2, 1, 1, "test-insert-channel"))
 	checker.dist.SegmentDistManager.Update(1, utils.CreateTestSegment(1, 1, 3, 1, 1, "test-insert-channel"))
+	suite.putSegment(2, nil)
+	suite.putSegment(3, nil)
 
 	// store
 	suite.metaStore.PutIndex(&model.Index{CollectionID: 1, FieldID: 101, IndexID: 1000})
@@ -568,8 +572,8 @@ func (suite *IndexCheckerSuite) TestLoadedCurrentBuildNoTask() {
 	suite.Empty(suite.checker.Check(context.Background()), "a loaded current build never asks for a reopen")
 }
 
-func (suite *IndexCheckerSuite) TestOlderBuildNewBuildNotReady() {
-	suite.setupLoadedIndex(map[int64]int64{1000: 7})
+func (suite *IndexCheckerSuite) TestMissingIndexWaitsForReadyBuild() {
+	suite.setupLoadedIndex(nil)
 	for _, state := range []commonpb.IndexState{commonpb.IndexState_Unissued, commonpb.IndexState_InProgress, commonpb.IndexState_Failed} {
 		suite.putBuild(2, 1000, 9, state)
 		suite.Empty(suite.checker.Check(context.Background()), state.String())
@@ -585,12 +589,30 @@ func (suite *IndexCheckerSuite) TestOlderBuildNewBuildNotReady() {
 	suite.Equal(task.ActionTypeReopen, tasks[0].Actions()[0].(*task.SegmentAction).Type())
 }
 
-func (suite *IndexCheckerSuite) TestOlderBuildReplaced() {
+// A reopen loads only index IDs the segment lacks (segcore diffs by index
+// ID), so a newer build of an index the node already loaded must not ask
+// for one: it would load nothing and only relabel the loaded build.
+func (suite *IndexCheckerSuite) TestNewerBuildOfLoadedIndexNoTask() {
 	suite.setupLoadedIndex(map[int64]int64{1000: 7})
 	suite.putFinishedBuild(2, 1000, 9)
-	tasks := suite.checker.Check(context.Background())
-	suite.Require().Len(tasks, 1)
-	suite.EqualValues(2, tasks[0].Actions()[0].(*task.SegmentAction).GetSegmentID())
+	suite.Empty(suite.checker.Check(context.Background()))
+}
+
+// A newer build still in progress must not hold back a JSON stats reopen.
+func (suite *IndexCheckerSuite) TestNewerBuildInProgressAllowsJSONStatsReopen() {
+	paramtable.Get().Save(paramtable.Get().CommonCfg.EnabledJSONKeyStats.Key, "true")
+	defer paramtable.Get().Reset(paramtable.Get().CommonCfg.EnabledJSONKeyStats.Key)
+	suite.setupLoadedIndex(map[int64]int64{1000: 7})
+	coll := utils.CreateTestCollection(1, 1)
+	coll.FieldIndexID = map[int64]int64{101: 1000}
+	coll.LoadFields = []int64{101}
+	suite.checker.meta.PutCollection(context.Background(), coll)
+	suite.metaStore.PutCollection(&metacache.CollectionInfo{ID: 1, Schema: &schemapb.CollectionSchema{
+		Fields: []*schemapb.FieldSchema{{FieldID: 101, DataType: schemapb.DataType_JSON, Name: "JSON"}},
+	}})
+	suite.putSegment(2, map[int64]*datapb.JsonKeyStats{101: {FieldID: 101}})
+	suite.putBuild(2, 1000, 9, commonpb.IndexState_InProgress)
+	suite.Len(suite.checker.Check(context.Background()), 1)
 }
 
 func (suite *IndexCheckerSuite) TestDroppedIndexNotRequired() {
