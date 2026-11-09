@@ -144,18 +144,18 @@ func (c *IndexChecker) checkReplica(ctx context.Context, collection *meta.Collec
 	return append(tasks, tasksStats...)
 }
 
-// checkSegment compares the builds the node loaded with the store's current
-// build of each live index. missing reports that the segment lacks the
-// current build of some index; ready reports that one of those builds can be
-// loaded: finished, not deleted, and with index files.
+// checkSegment reports whether the node lacks some live index of the
+// segment (missing), and whether the store has a build of a missing index
+// that can be loaded: finished, not deleted, and with index files (ready).
+// Only absent index IDs count: a reopen loads the index IDs a segment lacks,
+// so a newer build of a loaded index would load nothing.
 func (c *IndexChecker) checkSegment(view metacache.MetaView, segment *meta.Segment, indexInfos []*indexpb.IndexInfo) (missing, ready bool) {
 	for _, indexInfo := range indexInfos {
-		loaded, isLoaded := segment.IndexBuilds[indexInfo.GetIndexID()]
-		record, ok := view.GetSegmentIndex(segment.GetID(), indexInfo.GetIndexID())
-		if isLoaded && (!ok || record.BuildID == loaded) {
+		if _, ok := segment.IndexBuilds[indexInfo.GetIndexID()]; ok {
 			continue
 		}
 		missing = true
+		record, ok := view.GetSegmentIndex(segment.GetID(), indexInfo.GetIndexID())
 		if ok && record.IndexState == commonpb.IndexState_Finished && !record.IsDeleted && len(record.IndexFileKeys) > 0 {
 			ready = true
 		}
