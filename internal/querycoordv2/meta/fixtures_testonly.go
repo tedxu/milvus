@@ -35,15 +35,18 @@ type SegmentFixture struct {
 	JSONStatsFormats   map[int64]int64
 	ManifestPath       string
 	DataVersion        *int32
+	// KeepStored keeps a proto the store already has for the ID, such as a
+	// target segment, instead of replacing it with this fixture's.
+	KeepStored bool
 }
 
-// SeedSegments puts each fixture's proto into store unless the store
-// already has the ID, and returns the distribution records. A proto the
-// test put first, such as a target segment, is kept.
+// SeedSegments puts each fixture's proto into store, and returns the
+// distribution records. A fixture with KeepStored set leaves a proto the
+// store already has in place.
 func SeedSegments(store metacache.MetaStore, fixtures ...*SegmentFixture) []*LoadedSegment {
 	records := make([]*LoadedSegment, 0, len(fixtures))
 	for _, f := range fixtures {
-		if _, ok := store.GetSegment(f.GetID()); !ok {
+		if _, ok := store.GetSegment(f.GetID()); !ok || !f.KeepStored {
 			store.PutSegment(f.SegmentInfo)
 		}
 		records = append(records, &LoadedSegment{

@@ -24,6 +24,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
+	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
 	"github.com/milvus-io/milvus/internal/metacache"
 	"github.com/milvus-io/milvus/internal/querycoordv2/meta"
 	"github.com/milvus-io/milvus/internal/querycoordv2/session"
@@ -106,4 +107,35 @@ func TestBalancePlansStableForTies(t *testing.T) {
 		assert.Contains(t, []int64{1, 2, 3}, plan.To)
 	}
 	assert.Equal(t, []int64{1, 2, 3, 4, 5}, got)
+}
+
+// TestWorkloadStatusStoreMiss pins that an entry the store no longer has
+// counts 0 rows on its node.
+func TestWorkloadStatusStoreMiss(t *testing.T) {
+	nodeManager, scheduler := newTieTestNodes(t, 1)
+	dist := meta.NewDistributionManager(nodeManager)
+	dist.SegmentDistManager.Update(1, append(
+		meta.SeedInto(dist, &meta.SegmentFixture{SegmentInfo: &datapb.SegmentInfo{ID: 1, CollectionID: 100, NumOfRows: 100}, Node: 1}),
+		&meta.LoadedSegment{ID: 2, CollectionID: 100, Channel: "ch", Node: 1})...)
+
+	rowCount := newRowCountBasedAssignPolicy(nodeManager, scheduler, dist).getWorkloadStatus()
+	assert.Equal(t, 100, rowCount.nodeGlobalRowCount[1])
+	score := newScoreBasedAssignPolicy(nodeManager, scheduler, dist, nil).getWorkloadStatus()
+	assert.Equal(t, 100, score.nodeGlobalRowCount[1])
+	assert.Equal(t, 100, score.nodeCollectionRowCount[1][100])
+}
+
+// TestDroppedSegmentStillResolved pins that a segment compacted away while
+// still loaded, kept in the store as Dropped until GC, resolves with its
+// real fields and is not treated as a miss.
+func TestDroppedSegmentStillResolved(t *testing.T) {
+	store := metacache.NewMetaStore(nil)
+	records := meta.SeedSegments(store, &meta.SegmentFixture{
+		SegmentInfo: &datapb.SegmentInfo{ID: 1, CollectionID: 10, PartitionID: 100, NumOfRows: 7, InsertChannel: "ch", State: commonpb.SegmentState_Dropped},
+		Node:        1,
+	})
+	refs := SegmentRefsFromDist(store, records)
+	require.Len(t, refs, 1)
+	assert.Equal(t, int64(7), refs[0].NumOfRows)
+	assert.Equal(t, int64(100), refs[0].PartitionID)
 }

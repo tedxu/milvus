@@ -206,3 +206,34 @@ func TestMergeMetaSegmentIntoSegmentInfoReadsStore(t *testing.T) {
 	assert.Empty(t, info.GetIndexInfos()[0].GetIndexFilePaths())
 	assert.Equal(t, []int64{3}, info.GetNodeIds())
 }
+
+// TestGetSegmentInfoStoreMiss pins that a loaded segment the store no
+// longer has reports only its identity and nodes.
+func TestGetSegmentInfoStoreMiss(t *testing.T) {
+	info := &querypb.SegmentInfo{}
+	MergeMetaSegmentIntoSegmentInfo(metacachetest.NewMetaStore(), info, &meta.LoadedSegment{ID: 7, CollectionID: 1, Channel: "ch", Node: 3})
+
+	assert.Equal(t, int64(7), info.GetSegmentID())
+	assert.Equal(t, int64(1), info.GetCollectionID())
+	assert.Equal(t, "ch", info.GetDmChannel())
+	assert.Equal(t, []int64{3}, info.GetNodeIds())
+	assert.Zero(t, info.GetNumRows())
+	assert.Zero(t, info.GetPartitionID())
+}
+
+// TestGetSegmentInfoReportsStoreFlags pins that segment fields come from
+// the store, not from the distribution record.
+func TestGetSegmentInfoReportsStoreFlags(t *testing.T) {
+	store := metacachetest.NewMetaStore()
+	records := meta.SeedSegments(store, &meta.SegmentFixture{
+		SegmentInfo: &datapb.SegmentInfo{ID: 7, CollectionID: 1, PartitionID: 2, InsertChannel: "ch", NumOfRows: 100, Level: datapb.SegmentLevel_L1, IsSorted: true},
+		Node:        3,
+	})
+	info := &querypb.SegmentInfo{}
+	MergeMetaSegmentIntoSegmentInfo(store, info, records...)
+
+	assert.Equal(t, int64(2), info.GetPartitionID())
+	assert.Equal(t, int64(100), info.GetNumRows())
+	assert.Equal(t, datapb.SegmentLevel_L1, info.GetLevel())
+	assert.True(t, info.GetIsSorted())
+}

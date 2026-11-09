@@ -152,6 +152,7 @@ func TestServer_getSegmentsJSON(t *testing.T) {
 		PartitionID:   1,
 		InsertChannel: "dmc0",
 	}))...)
+	server.metaView = server.dist.MetaView()
 
 	ctx := context.TODO()
 

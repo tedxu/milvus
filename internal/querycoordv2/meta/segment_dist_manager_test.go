@@ -24,8 +24,11 @@ import (
 	"github.com/stretchr/testify/suite"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
+	"github.com/milvus-io/milvus/internal/metacache"
 	"github.com/milvus-io/milvus/internal/metacache/metacachetest"
 	"github.com/milvus-io/milvus/internal/metastore/model"
+	"github.com/milvus-io/milvus/pkg/v3/proto/datapb"
 	"github.com/milvus-io/milvus/pkg/v3/proto/querypb"
 	"github.com/milvus-io/milvus/pkg/v3/util/metricsinfo"
 )
@@ -62,10 +65,10 @@ func (suite *SegmentDistManagerSuite) SetupSuite() {
 	suite.partitions = []int64{1, 2}
 	suite.nodes = []int64{0, 1, 2}
 	suite.segments = map[int64]*LoadedSegment{
-		1: &LoadedSegment{ID: 1, CollectionID: suite.collection, Channel: "dmc0"},
-		2: &LoadedSegment{ID: 2, CollectionID: suite.collection, Channel: "dmc1"},
-		3: &LoadedSegment{ID: 3, CollectionID: suite.collection, Channel: "dmc0"},
-		4: &LoadedSegment{ID: 4, CollectionID: suite.collection, Channel: "dmc1"},
+		1: {ID: 1, CollectionID: suite.collection, Channel: "dmc0"},
+		2: {ID: 2, CollectionID: suite.collection, Channel: "dmc1"},
+		3: {ID: 3, CollectionID: suite.collection, Channel: "dmc0"},
+		4: {ID: 4, CollectionID: suite.collection, Channel: "dmc1"},
 	}
 }
 
@@ -294,19 +297,17 @@ func TestGetSegmentDistJSON(t *testing.T) {
 	// Initialize SegmentDistManager
 	manager := NewSegmentDistManager()
 
-	// Add some segments to the SegmentDistManager
-	segment1 := &LoadedSegment{ID: 1, CollectionID: 100, Channel: "channel-1"}
-	segment1.Node = 1
-	segment1.Version = 1
+	// Add some segments to the SegmentDistManager, with their fields in the store
+	store := metacachetest.NewMetaStore()
+	records := SeedSegments(store,
+		&SegmentFixture{SegmentInfo: &datapb.SegmentInfo{ID: 1, CollectionID: 100, PartitionID: 10, InsertChannel: "channel-1", NumOfRows: 1000, State: commonpb.SegmentState_Flushed}, Node: 1, Version: 1},
+		&SegmentFixture{SegmentInfo: &datapb.SegmentInfo{ID: 2, CollectionID: 200, PartitionID: 20, InsertChannel: "channel-2", NumOfRows: 2000, State: commonpb.SegmentState_Flushed}, Node: 2, Version: 1},
+	)
 
-	segment2 := &LoadedSegment{ID: 2, CollectionID: 200, Channel: "channel-2"}
-	segment2.Node = 2
-	segment2.Version = 1
+	manager.Update(1, records[0])
+	manager.Update(2, records[1])
 
-	manager.Update(1, segment1)
-	manager.Update(2, segment2)
-
-	segments := manager.GetSegmentDist(0, metacachetest.NewMetaStore())
+	segments := manager.GetSegmentDist(0, store)
 	assert.Equal(t, 2, len(segments))
 
 	checkResults := func(s *metricsinfo.Segment) {
@@ -413,4 +414,42 @@ func TestLoadedFieldIndexInfos(t *testing.T) {
 func cloneLoaded(s *LoadedSegment) *LoadedSegment {
 	c := *s
 	return &c
+}
+
+// TestSegmentDistMetricsStoreMiss pins that a loaded segment the store no
+// longer has reports only its identity and node.
+func TestSegmentDistMetricsStoreMiss(t *testing.T) {
+	dist := NewSegmentDistManager()
+	dist.Update(3, &LoadedSegment{ID: 7, CollectionID: 1, Channel: "ch", Node: 3})
+
+	metrics := dist.GetSegmentDist(1, metacache.NewMetaStore(nil))
+
+	require.Len(t, metrics, 1)
+	assert.Equal(t, int64(7), metrics[0].SegmentID)
+	assert.Equal(t, int64(1), metrics[0].CollectionID)
+	assert.Equal(t, "ch", metrics[0].Channel)
+	assert.Equal(t, int64(3), metrics[0].NodeID)
+	assert.Zero(t, metrics[0].NumOfRows)
+	assert.Zero(t, metrics[0].PartitionID)
+}
+
+// TestSegmentDistMetricsReportsStoreFlags pins that metrics carry the store's
+// state and flags, which the projected copy reported as zero.
+func TestSegmentDistMetricsReportsStoreFlags(t *testing.T) {
+	store := metacache.NewMetaStore(nil)
+	store.PutSegment(&datapb.SegmentInfo{
+		ID: 7, CollectionID: 1, PartitionID: 2, InsertChannel: "ch", NumOfRows: 100,
+		State: commonpb.SegmentState_Flushed, IsImporting: true, Level: datapb.SegmentLevel_L1, IsSorted: true,
+	})
+	dist := NewSegmentDistManager()
+	dist.Update(3, &LoadedSegment{ID: 7, CollectionID: 1, Channel: "ch", Node: 3})
+
+	metrics := dist.GetSegmentDist(1, store)
+
+	require.Len(t, metrics, 1)
+	assert.Equal(t, commonpb.SegmentState_Flushed.String(), metrics[0].State)
+	assert.True(t, metrics[0].IsImporting)
+	assert.Equal(t, int64(2), metrics[0].PartitionID)
+	assert.Equal(t, int64(100), metrics[0].NumOfRows)
+	assert.True(t, metrics[0].IsSorted)
 }

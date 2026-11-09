@@ -21,11 +21,13 @@ package utils
 import "github.com/milvus-io/milvus/internal/querycoordv2/meta"
 
 // CreateTestSegment describes a segment loaded on node for a test. Seed it
-// into a distribution with meta.SeedInto or meta.SeedSegments.
+// into a distribution with meta.SeedInto or meta.SeedSegments; it keeps a
+// proto the store already has for the ID, such as a target segment.
 func CreateTestSegment(collection, partition, segment, node, version int64, channel string) *meta.SegmentFixture {
 	return &meta.SegmentFixture{
 		SegmentInfo: CreateTestSegmentInfo(collection, partition, segment, channel),
 		Node:        node,
 		Version:     version,
+		KeepStored:  true,
 	}
 }
