@@ -141,3 +141,22 @@ func TestReopenComparesLoadedWithTarget(t *testing.T) {
 		})
 	}
 }
+
+// TestGrowingReleaseHasNoWorkloadEffect pins that releasing a growing
+// segment carries 0 rows even when the store has a flushed segment with
+// the same ID: sealed row totals never counted growing rows.
+func TestGrowingReleaseHasNoWorkloadEffect(t *testing.T) {
+	store := metacache.NewMetaStore(nil)
+	store.PutSegment(&datapb.SegmentInfo{ID: 9, CollectionID: 1, InsertChannel: "ch", NumOfRows: 100})
+	checker := newSealedDiffTestChecker(t, store, map[int64]*datapb.SegmentInfo{})
+	replica := meta.NewReplica(&querypb.Replica{ID: 1, CollectionID: 1})
+	segments := []*meta.LoadedSegment{{ID: 9, CollectionID: 1, Channel: "ch", Node: 2}}
+
+	growing := checker.createSegmentReduceTasks(context.Background(), segments, replica, querypb.DataScope_Streaming)
+	require.Len(t, growing, 1)
+	assert.Zero(t, growing[0].Actions()[0].WorkLoadEffect())
+
+	sealed := checker.createSegmentReduceTasks(context.Background(), segments, replica, querypb.DataScope_Historical)
+	require.Len(t, sealed, 1)
+	assert.Equal(t, -100, sealed[0].Actions()[0].WorkLoadEffect())
+}
