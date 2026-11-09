@@ -366,7 +366,6 @@ func (s *Server) initQueryCoord() error {
 		s.targetMgr,
 		s.nodeMgr,
 		s.taskScheduler,
-		s.broker,
 	)
 
 	// Init observers

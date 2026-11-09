@@ -300,6 +300,12 @@ func (m *CollectionManager) GetCollectionInfo(collectionID typeutil.UniqueID) (*
 	return info, nil
 }
 
+// MetaView returns the shared store view the manager reads collection and
+// index metadata from.
+func (m *CollectionManager) MetaView() metacache.MetaView {
+	return m.metaView
+}
+
 // ListIndexInfos returns the collection's live index definitions, sorted by
 // index ID, from the shared metacache store. DataCoord publishes every index
 // DDL there once its catalog write succeeded. The param entries are shared and

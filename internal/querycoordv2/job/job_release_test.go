@@ -157,7 +157,7 @@ func newReleaseJobDeps(t *testing.T, m *meta.Meta, dist *meta.DistributionManage
 	t.Cleanup(targetObserver.Stop)
 
 	assign.InitGlobalAssignPolicyFactory(nil, nodeMgr, dist, m, targetMgr)
-	checkerController := checkers.NewCheckerController(m, dist, targetMgr, nodeMgr, nil, nil)
+	checkerController := checkers.NewCheckerController(m, dist, targetMgr, nodeMgr, nil)
 	proxyManager := proxyutil.NewProxyClientManager(nil)
 	return targetObserver, checkerController, proxyManager
 }

@@ -325,7 +325,6 @@ func (suite *ServiceSuite) SetupTest() {
 		suite.targetMgr,
 		suite.nodeMgr,
 		suite.taskScheduler,
-		suite.broker,
 	)
 
 	suite.server.registerMetricsRequest()
