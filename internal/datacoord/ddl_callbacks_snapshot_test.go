@@ -570,7 +570,7 @@ func buildValidateTestServer(t *testing.T, snapshotFound bool) *Server {
 		},
 		domainMetas: domainMetas{
 			snapshotMeta: sm,
-			indexMeta:    &index.IndexMeta{},
+			indexMeta:    index.NewSegmentIndexMeta(nil),
 		},
 	}, &meta.CollectionInfo{ID: 100, DatabaseName: "default", Schema: &schemapb.CollectionSchema{Name: "test_coll"}})
 }

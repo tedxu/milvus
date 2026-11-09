@@ -136,7 +136,7 @@ func TestExternalRefreshPublicationIndexWait(t *testing.T) {
 		TransformStartAfterTimeticks: map[string]uint64{"v1": 50},
 	}
 	task := &datapb.ExternalCollectionRefreshTask{TaskId: 1001, JobId: 1, CollectionId: 100, State: indexpb.JobState_JobStateFinished}
-	im := &index.IndexMeta{}
+	im := index.NewSegmentIndexMeta(nil)
 	mt := &meta.Meta{IndexCatalog: im}
 	meta := createTestRefreshMetaWithJobs(t, []*datapb.ExternalCollectionRefreshJob{job}, []*datapb.ExternalCollectionRefreshTask{task})
 	applies := 0

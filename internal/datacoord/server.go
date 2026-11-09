@@ -774,14 +774,12 @@ type domainMetas struct {
 
 // loadDomainMetas returns a DomainMetaLoader that builds every domain meta in parallel into out and returns the index catalog and the compaction protection.
 func loadDomainMetas(catalog metastore.DataCoordCatalog, chunkManager storage.ChunkManager, out *domainMetas) meta.DomainMetaLoader {
-	return func(ctx context.Context, collectionIDs []int64) (meta.SegmentIndexCatalog, meta.CompactionProtection, error) {
+	return func(ctx context.Context, store metacache.MetaStore, collectionIDs []int64) (meta.SegmentIndexCatalog, meta.CompactionProtection, error) {
 		g, _ := errgroup.WithContext(ctx)
 
-		g.Go(func() error {
-			var err error
-			out.indexMeta, err = index.NewIndexMeta(ctx, catalog, collectionIDs)
-			return err
-		})
+		// The store loads the index metadata; NewMeta rebuilds the writer's
+		// state from it once both loads finish.
+		out.indexMeta = index.NewIndexMeta(ctx, catalog, store)
 
 		g.Go(func() error {
 			var err error

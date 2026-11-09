@@ -356,7 +356,7 @@ func (s *CompactionTriggerManagerSuite) TestHandleTickerSubmitsSortsFirstUntilFu
 			return &policy.MixSegmentView{Label: s.testLabel, Segments: []*view.SegmentView{{ID: segmentID, Label: s.testLabel, Size: 1}}, TriggerID: 1000}
 		})
 	}
-	s.setIndexMeta(&index.IndexMeta{Indexes: make(map[UniqueID]map[UniqueID]*model.Index)})
+	s.setIndexMeta(index.NewIndexMetaForTest(nil, nil))
 	handler := meta.NewNMockHandler(s.T())
 	handler.EXPECT().GetCollection(mock.Anything, s.testLabel.CollectionID).
 		Return(&meta.CollectionInfo{ID: s.testLabel.CollectionID, Schema: &schemapb.CollectionSchema{}}, nil)
@@ -392,7 +392,7 @@ func (s *CompactionTriggerManagerSuite) TestHandleSortSignal() {
 		s.handler.(*meta.NMockHandler).EXPECT().GetCollection(mock.Anything, s.testLabel.CollectionID).
 			Return(&meta.CollectionInfo{ID: s.testLabel.CollectionID, Schema: &schemapb.CollectionSchema{}}, nil)
 		s.triggerManager = NewCompactionTriggerManager(meta.NewMockAllocator(s.T()), s.handler, s.inspector, s.meta, nil, nil, nil, nil, s.versionManager)
-		s.setIndexMeta(&index.IndexMeta{Indexes: make(map[UniqueID]map[UniqueID]*model.Index)})
+		s.setIndexMeta(index.NewIndexMetaForTest(nil, nil))
 	}
 
 	s.Run("sort of a flushed segment stops when full", func() {
@@ -545,40 +545,38 @@ func (s *CompactionTriggerManagerSuite) TestGetExpectedSegmentSize() {
 	defer paramtable.Get().Reset(paramtable.Get().DataCoordCfg.DiskSegmentMaxSize.Key)
 
 	s.triggerManager.meta = &meta.Meta{}
-	s.setIndexMeta(&index.IndexMeta{
-		Indexes: map[UniqueID]map[UniqueID]*model.Index{
-			collectionID: {
-				indexID + 1: &model.Index{
-					CollectionID: collectionID,
-					FieldID:      fieldID + 1,
-					IndexID:      indexID + 1,
-					IndexName:    "",
-					IsDeleted:    false,
-					CreateTime:   0,
-					TypeParams:   nil,
-					IndexParams: []*commonpb.KeyValuePair{
-						{Key: common.IndexTypeKey, Value: "DISKANN"},
-					},
-					IsAutoIndex:     false,
-					UserIndexParams: nil,
+	s.setIndexMeta(index.NewIndexMetaForTest(nil, map[UniqueID]map[UniqueID]*model.Index{
+		collectionID: {
+			indexID + 1: &model.Index{
+				CollectionID: collectionID,
+				FieldID:      fieldID + 1,
+				IndexID:      indexID + 1,
+				IndexName:    "",
+				IsDeleted:    false,
+				CreateTime:   0,
+				TypeParams:   nil,
+				IndexParams: []*commonpb.KeyValuePair{
+					{Key: common.IndexTypeKey, Value: "DISKANN"},
 				},
-				indexID + 2: &model.Index{
-					CollectionID: collectionID,
-					FieldID:      fieldID + 2,
-					IndexID:      indexID + 2,
-					IndexName:    "",
-					IsDeleted:    false,
-					CreateTime:   0,
-					TypeParams:   nil,
-					IndexParams: []*commonpb.KeyValuePair{
-						{Key: common.IndexTypeKey, Value: "DISKANN"},
-					},
-					IsAutoIndex:     false,
-					UserIndexParams: nil,
+				IsAutoIndex:     false,
+				UserIndexParams: nil,
+			},
+			indexID + 2: &model.Index{
+				CollectionID: collectionID,
+				FieldID:      fieldID + 2,
+				IndexID:      indexID + 2,
+				IndexName:    "",
+				IsDeleted:    false,
+				CreateTime:   0,
+				TypeParams:   nil,
+				IndexParams: []*commonpb.KeyValuePair{
+					{Key: common.IndexTypeKey, Value: "DISKANN"},
 				},
+				IsAutoIndex:     false,
+				UserIndexParams: nil,
 			},
 		},
-	})
+	}))
 
 	s.Run("all DISKANN", func() {
 		collection := &meta.CollectionInfo{
@@ -601,40 +599,38 @@ func (s *CompactionTriggerManagerSuite) TestGetExpectedSegmentSize() {
 
 	s.Run("HNSW & DISKANN", func() {
 		s.triggerManager.meta = &meta.Meta{}
-		s.setIndexMeta(&index.IndexMeta{
-			Indexes: map[UniqueID]map[UniqueID]*model.Index{
-				collectionID: {
-					indexID + 1: &model.Index{
-						CollectionID: collectionID,
-						FieldID:      fieldID + 1,
-						IndexID:      indexID + 1,
-						IndexName:    "",
-						IsDeleted:    false,
-						CreateTime:   0,
-						TypeParams:   nil,
-						IndexParams: []*commonpb.KeyValuePair{
-							{Key: common.IndexTypeKey, Value: "HNSW"},
-						},
-						IsAutoIndex:     false,
-						UserIndexParams: nil,
+		s.setIndexMeta(index.NewIndexMetaForTest(nil, map[UniqueID]map[UniqueID]*model.Index{
+			collectionID: {
+				indexID + 1: &model.Index{
+					CollectionID: collectionID,
+					FieldID:      fieldID + 1,
+					IndexID:      indexID + 1,
+					IndexName:    "",
+					IsDeleted:    false,
+					CreateTime:   0,
+					TypeParams:   nil,
+					IndexParams: []*commonpb.KeyValuePair{
+						{Key: common.IndexTypeKey, Value: "HNSW"},
 					},
-					indexID + 2: &model.Index{
-						CollectionID: collectionID,
-						FieldID:      fieldID + 2,
-						IndexID:      indexID + 2,
-						IndexName:    "",
-						IsDeleted:    false,
-						CreateTime:   0,
-						TypeParams:   nil,
-						IndexParams: []*commonpb.KeyValuePair{
-							{Key: common.IndexTypeKey, Value: "DISKANN"},
-						},
-						IsAutoIndex:     false,
-						UserIndexParams: nil,
+					IsAutoIndex:     false,
+					UserIndexParams: nil,
+				},
+				indexID + 2: &model.Index{
+					CollectionID: collectionID,
+					FieldID:      fieldID + 2,
+					IndexID:      indexID + 2,
+					IndexName:    "",
+					IsDeleted:    false,
+					CreateTime:   0,
+					TypeParams:   nil,
+					IndexParams: []*commonpb.KeyValuePair{
+						{Key: common.IndexTypeKey, Value: "DISKANN"},
 					},
+					IsAutoIndex:     false,
+					UserIndexParams: nil,
 				},
 			},
-		})
+		}))
 		collection := &meta.CollectionInfo{
 			ID: collectionID,
 			Schema: &schemapb.CollectionSchema{
@@ -655,26 +651,24 @@ func (s *CompactionTriggerManagerSuite) TestGetExpectedSegmentSize() {
 
 	s.Run("some vector has no index", func() {
 		s.triggerManager.meta = &meta.Meta{}
-		s.setIndexMeta(&index.IndexMeta{
-			Indexes: map[UniqueID]map[UniqueID]*model.Index{
-				collectionID: {
-					indexID + 1: &model.Index{
-						CollectionID: collectionID,
-						FieldID:      fieldID + 1,
-						IndexID:      indexID + 1,
-						IndexName:    "",
-						IsDeleted:    false,
-						CreateTime:   0,
-						TypeParams:   nil,
-						IndexParams: []*commonpb.KeyValuePair{
-							{Key: common.IndexTypeKey, Value: "HNSW"},
-						},
-						IsAutoIndex:     false,
-						UserIndexParams: nil,
+		s.setIndexMeta(index.NewIndexMetaForTest(nil, map[UniqueID]map[UniqueID]*model.Index{
+			collectionID: {
+				indexID + 1: &model.Index{
+					CollectionID: collectionID,
+					FieldID:      fieldID + 1,
+					IndexID:      indexID + 1,
+					IndexName:    "",
+					IsDeleted:    false,
+					CreateTime:   0,
+					TypeParams:   nil,
+					IndexParams: []*commonpb.KeyValuePair{
+						{Key: common.IndexTypeKey, Value: "HNSW"},
 					},
+					IsAutoIndex:     false,
+					UserIndexParams: nil,
 				},
 			},
-		})
+		}))
 		collection := &meta.CollectionInfo{
 			ID: collectionID,
 			Schema: &schemapb.CollectionSchema{
@@ -765,7 +759,7 @@ func (s *CompactionTriggerManagerSuite) TestSubmitSingleViewToScheduler() {
 		pt.Save(pt.DataCoordCfg.SegmentMaxSize.Key, "100")
 		defer pt.Reset(pt.DataCoordCfg.SegmentMaxSize.Key)
 
-		s.setIndexMeta(&index.IndexMeta{Indexes: make(map[UniqueID]map[UniqueID]*model.Index)})
+		s.setIndexMeta(index.NewIndexMetaForTest(nil, nil))
 		collectionSchema := &schemapb.CollectionSchema{
 			Name: "test_coll",
 			Fields: []*schemapb.FieldSchema{
@@ -815,7 +809,7 @@ func (s *CompactionTriggerManagerSuite) TestSubmitSingleViewToScheduler() {
 		pt.Save(pt.DataCoordCfg.SegmentMaxSize.Key, "100")
 		defer pt.Reset(pt.DataCoordCfg.SegmentMaxSize.Key)
 
-		s.setIndexMeta(&index.IndexMeta{Indexes: make(map[UniqueID]map[UniqueID]*model.Index)})
+		s.setIndexMeta(index.NewIndexMetaForTest(nil, nil))
 		collectionSchema := &schemapb.CollectionSchema{
 			Name: "test_coll",
 			Fields: []*schemapb.FieldSchema{
@@ -855,7 +849,7 @@ func (s *CompactionTriggerManagerSuite) TestSubmitSingleViewToScheduler() {
 		pt.Save(pt.DataCoordCfg.SegmentMaxSize.Key, "100")
 		defer pt.Reset(pt.DataCoordCfg.SegmentMaxSize.Key)
 
-		s.setIndexMeta(&index.IndexMeta{Indexes: make(map[UniqueID]map[UniqueID]*model.Index)})
+		s.setIndexMeta(index.NewIndexMetaForTest(nil, nil))
 		collectionSchema := &schemapb.CollectionSchema{
 			Name: "test_coll",
 			Fields: []*schemapb.FieldSchema{
@@ -898,7 +892,7 @@ func (s *CompactionTriggerManagerSuite) TestSubmitClusteringViewToScheduler() {
 	pt.Save(pt.DataCoordCfg.ClusteringCompactionPreferSegmentSizeRatio.Key, "1")
 	defer pt.Reset(pt.DataCoordCfg.ClusteringCompactionPreferSegmentSizeRatio.Key)
 
-	s.setIndexMeta(&index.IndexMeta{Indexes: make(map[UniqueID]map[UniqueID]*model.Index)})
+	s.setIndexMeta(index.NewIndexMetaForTest(nil, nil))
 	clusteringKey := &schemapb.FieldSchema{FieldID: 2, Name: "cluster_key", DataType: schemapb.DataType_Int64, IsClusteringKey: true}
 	collectionSchema := &schemapb.CollectionSchema{
 		Name: "test_coll",
@@ -1040,7 +1034,7 @@ func (s *CompactionTriggerManagerSuite) TestSubmitViewToSchedulerDefensiveReturn
 
 	s.Run("single AllocN error returns before enqueue", func() {
 		s.SetupTest()
-		s.setIndexMeta(&index.IndexMeta{Indexes: make(map[UniqueID]map[UniqueID]*model.Index)})
+		s.setIndexMeta(index.NewIndexMetaForTest(nil, nil))
 		handler := meta.NewNMockHandler(s.T())
 		handler.EXPECT().GetCollection(mock.Anything, s.testLabel.CollectionID).
 			Return(&meta.CollectionInfo{ID: s.testLabel.CollectionID, Schema: makeCollectionSchema(false)}, nil).Once()
@@ -1063,7 +1057,7 @@ func (s *CompactionTriggerManagerSuite) TestSubmitViewToSchedulerDefensiveReturn
 
 	s.Run("clustering AllocN error returns before enqueue", func() {
 		s.SetupTest()
-		s.setIndexMeta(&index.IndexMeta{Indexes: make(map[UniqueID]map[UniqueID]*model.Index)})
+		s.setIndexMeta(index.NewIndexMetaForTest(nil, nil))
 		clusteringKey := &schemapb.FieldSchema{FieldID: 2, Name: "cluster_key", DataType: schemapb.DataType_Int64, IsClusteringKey: true}
 		collectionSchema := makeCollectionSchema(false)
 		collectionSchema.Fields = append(collectionSchema.Fields, clusteringKey)
@@ -1151,7 +1145,7 @@ func (s *CompactionTriggerManagerSuite) TestSubmitBumpSchemaVersionViewToSchedul
 
 	s.Run("AllocN fails", func() {
 		s.SetupTest()
-		s.setIndexMeta(&index.IndexMeta{Indexes: make(map[UniqueID]map[UniqueID]*model.Index)})
+		s.setIndexMeta(index.NewIndexMetaForTest(nil, nil))
 		handler := meta.NewNMockHandler(s.T())
 		handler.EXPECT().GetCollection(mock.Anything, s.testLabel.CollectionID).
 			Return(&meta.CollectionInfo{ID: s.testLabel.CollectionID, Schema: collectionSchema}, nil).Once()
@@ -1215,7 +1209,7 @@ func (s *CompactionTriggerManagerSuite) TestSubmitBumpSchemaVersionViewToSchedul
 
 	s.Run("enqueueCompaction fails", func() {
 		s.SetupTest()
-		s.setIndexMeta(&index.IndexMeta{Indexes: make(map[UniqueID]map[UniqueID]*model.Index)})
+		s.setIndexMeta(index.NewIndexMetaForTest(nil, nil))
 		const (
 			startID   = int64(504)
 			endID     = int64(508)
@@ -1237,7 +1231,7 @@ func (s *CompactionTriggerManagerSuite) TestSubmitBumpSchemaVersionViewToSchedul
 
 	s.Run("success", func() {
 		s.SetupTest()
-		s.setIndexMeta(&index.IndexMeta{Indexes: make(map[UniqueID]map[UniqueID]*model.Index)})
+		s.setIndexMeta(index.NewIndexMetaForTest(nil, nil))
 		const (
 			startID   = int64(600)
 			endID     = int64(604)
@@ -1279,7 +1273,7 @@ func (s *CompactionTriggerManagerSuite) TestSubmitBumpSchemaVersionViewToSchedul
 
 	s.Run("policy to submit keeps frozen schema", func() {
 		s.SetupTest()
-		s.setIndexMeta(&index.IndexMeta{Indexes: make(map[UniqueID]map[UniqueID]*model.Index)})
+		s.setIndexMeta(index.NewIndexMetaForTest(nil, nil))
 		const (
 			startID   = int64(601)
 			endID     = int64(605)

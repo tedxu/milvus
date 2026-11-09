@@ -33,7 +33,6 @@ import (
 	"github.com/milvus-io/milvus/pkg/v3/proto/datapb"
 	"github.com/milvus-io/milvus/pkg/v3/proto/indexpb"
 	"github.com/milvus-io/milvus/pkg/v3/util/paramtable"
-	"github.com/milvus-io/milvus/pkg/v3/util/typeutil"
 )
 
 func indexServingQueryIDs(s *Server) []int64 {
@@ -123,9 +122,7 @@ func TestIndexServingReadinessRecoverability(t *testing.T) {
 			}
 			assertIndexServingState(t, s, index, want)
 			// Finished current output tasks retain their own readiness semantics.
-			outputIndexes, ok := s.indexMeta.SegmentIndexes.Get(2)
-			require.True(t, ok)
-			output, ok := outputIndexes.Get(10)
+			output, ok := s.indexMeta.Store().GetSegmentIndex(2, 10)
 			require.True(t, ok)
 			output.IndexState = commonpb.IndexState_Finished
 			assertIndexServingState(t, s, index, commonpb.IndexState_Finished)
@@ -134,12 +131,7 @@ func TestIndexServingReadinessRecoverability(t *testing.T) {
 }
 
 func addIndexServingTask(s *Server, segmentID, indexID int64, state commonpb.IndexState) {
-	indexes, ok := s.indexMeta.SegmentIndexes.Get(segmentID)
-	if !ok {
-		indexes = typeutil.NewConcurrentMap[UniqueID, *model.SegmentIndex]()
-		s.indexMeta.SegmentIndexes.Insert(segmentID, indexes)
-	}
-	indexes.Insert(indexID, &model.SegmentIndex{
+	s.indexMeta.PutSegmentIndexesForTest(&model.SegmentIndex{
 		SegmentID: segmentID, CollectionID: 1, IndexID: indexID,
 		IndexState: state, CurrentIndexVersion: 7, CurrentScalarIndexVersion: 9,
 	})
@@ -169,7 +161,7 @@ func TestIndexServingReadinessRequestedIndexFrontier(t *testing.T) {
 			require.NoError(t, paramtable.Get().Save(key, fmt.Sprint(test.forceAll)))
 			t.Cleanup(func() { paramtable.Get().Reset(key) })
 			index := &model.Index{CollectionID: 1, FieldID: 20, IndexID: 20, IndexName: "scalar_index", CreateTime: 100}
-			s.indexMeta.Indexes[1][20] = index
+			s.indexMeta.PutIndexesForTest(index)
 			addIndexServingTask(s, 1, 20, commonpb.IndexState_Finished)
 			addIndexServingTask(s, 2, 20, test.parentScalar)
 			addIndexServingTask(s, 3, 20, commonpb.IndexState_InProgress)
@@ -185,7 +177,7 @@ func TestIndexServingReadinessRequestedIndexFrontier(t *testing.T) {
 		index.IndexName = "vector_index"
 		collection := s.meta.GetCollection(1)
 		collection.Schema.Fields = append(collection.Schema.Fields, &schemapb.FieldSchema{FieldID: 30, Name: "second_vector", DataType: schemapb.DataType_FloatVector})
-		s.indexMeta.Indexes[1][30] = &model.Index{CollectionID: 1, FieldID: 30, IndexID: 30}
+		s.indexMeta.PutIndexesForTest(&model.Index{CollectionID: 1, FieldID: 30, IndexID: 30})
 		for _, id := range []int64{1, 2} {
 			addIndexServingTask(s, id, 30, commonpb.IndexState_InProgress)
 		}
@@ -278,8 +270,7 @@ func TestIndexServingReadinessLineageBoundary(t *testing.T) {
 		index.IndexName = "nil_handler_index"
 		s.handler = nil
 		assertIndexServingState(t, s, index, commonpb.IndexState_InProgress)
-		outputIndexes, _ := s.indexMeta.SegmentIndexes.Get(2)
-		output, _ := outputIndexes.Get(10)
+		output, _ := s.indexMeta.Store().GetSegmentIndex(2, 10)
 		output.IndexState = commonpb.IndexState_Finished
 		assertIndexServingState(t, s, index, commonpb.IndexState_Finished)
 	})
@@ -292,14 +283,13 @@ func TestIndexServingReadinessCyclicAncestorCannotCoverDescendant(t *testing.T) 
 		newIndexLineageSegment(3, 90, commonpb.SegmentState_Flushed, 1),
 	}, map[int64]commonpb.IndexState{1: commonpb.IndexState_Finished})
 	index := &model.Index{CollectionID: 1, FieldID: 20, IndexID: 20, IndexName: "cyclic_scalar", CreateTime: 100}
-	s.indexMeta.Indexes[1][20] = index
+	s.indexMeta.PutIndexesForTest(index)
 	addIndexServingTask(s, 1, 20, commonpb.IndexState_Finished)
 	addIndexServingTask(s, 3, 20, commonpb.IndexState_InProgress)
 	// A cycle may leave a live fallback candidate in a conservative query
 	// frontier. That candidate still cannot certify another segment's index.
 	assertIndexServingState(t, s, index, commonpb.IndexState_InProgress)
-	outputIndexes, _ := s.indexMeta.SegmentIndexes.Get(3)
-	output, _ := outputIndexes.Get(20)
+	output, _ := s.indexMeta.Store().GetSegmentIndex(3, 20)
 	output.IndexState = commonpb.IndexState_Finished
 	assertIndexServingState(t, s, index, commonpb.IndexState_Finished)
 }

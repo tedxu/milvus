@@ -993,10 +993,7 @@ func TestFilterInIndexedSegmentsStructVector(t *testing.T) {
 			}
 			indexes[indexID] = &model.Index{CollectionID: collectionID, FieldID: fieldID, IndexID: indexID}
 		}
-		im := &index.IndexMeta{
-			Indexes:        map[UniqueID]map[UniqueID]*model.Index{collectionID: indexes},
-			SegmentIndexes: typeutil.NewConcurrentMap[UniqueID, *typeutil.ConcurrentMap[UniqueID, *model.SegmentIndex]](),
-		}
+		im := index.NewIndexMetaForTest(nil, map[UniqueID]map[UniqueID]*model.Index{collectionID: indexes})
 		var infos []*meta.SegmentInfo
 		for segmentID := int64(1); segmentID <= int64(len(segments)); segmentID++ {
 			infos = append(infos, meta.NewSegmentInfo(&datapb.SegmentInfo{
@@ -1005,14 +1002,12 @@ func TestFilterInIndexedSegmentsStructVector(t *testing.T) {
 			if len(segments[segmentID]) == 0 {
 				continue
 			}
-			byIndex := typeutil.NewConcurrentMap[UniqueID, *model.SegmentIndex]()
 			for _, idx := range segments[segmentID] {
-				byIndex.Insert(idx.indexID, &model.SegmentIndex{
+				im.PutSegmentIndexesForTest(&model.SegmentIndex{
 					CollectionID: collectionID, SegmentID: segmentID, IndexID: idx.indexID,
 					IndexState: idx.state, FailReason: idx.reason,
 				})
 			}
-			im.SegmentIndexes.Insert(segmentID, byIndex)
 		}
 		got := index.FilterInIndexedSegments(context.Background(), handler, im, false, infos...)
 		gotIDs := make([]int64, 0, len(got))

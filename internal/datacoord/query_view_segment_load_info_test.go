@@ -47,7 +47,7 @@ func TestQueryViewSegmentLoadInfoPreservesV3ResourceStatistics(t *testing.T) {
 }
 
 func TestQueryViewSegmentLoadInfoRejectsUnknownReplayCursor(t *testing.T) {
-	im := &index.IndexMeta{}
+	im := index.NewSegmentIndexMeta(nil)
 	m := &meta.Meta{IndexCatalog: im}
 	patchIndexes := mockey.Mock((*index.IndexMeta).GetQueryViewIndexSnapshot).Return([]*model.Index(nil), map[int64]map[UniqueID]*model.SegmentIndex(nil)).Build()
 	defer patchIndexes.UnPatch()
@@ -79,7 +79,7 @@ func TestQueryViewSegmentLoadInfoBatchIsolation(t *testing.T) {
 		}
 	}).Build()
 	defer patchSegment.UnPatch()
-	im := &index.IndexMeta{}
+	im := index.NewSegmentIndexMeta(nil)
 	s := &Server{meta: &meta.Meta{IndexCatalog: im}, domainMetas: domainMetas{indexMeta: im}}
 	s.UpdateStateCode(commonpb.StateCode_Healthy)
 	results, indexes, err := s.GetQueryViewSegmentLoadInfos(t.Context(), 1, []int64{2, 3, 4, 1, 1})
@@ -173,7 +173,7 @@ func TestQueryViewSegmentLoadInfoManifestErrorIsolation(t *testing.T) {
 		return segments[id]
 	}).Build()
 	defer patchSegment.UnPatch()
-	im := &index.IndexMeta{}
+	im := index.NewSegmentIndexMeta(nil)
 	s := &Server{meta: &meta.Meta{IndexCatalog: im, ChunkManager: storage.NewLocalChunkManager(objectstorage.RootPath("files"))}, domainMetas: domainMetas{indexMeta: im}}
 	s.UpdateStateCode(commonpb.StateCode_Healthy)
 	results, indexes, err := s.GetQueryViewSegmentLoadInfos(t.Context(), 1, []int64{1, 2, 3, 4})

@@ -37,7 +37,6 @@ import (
 	"github.com/milvus-io/milvus/pkg/v3/proto/indexpb"
 	"github.com/milvus-io/milvus/pkg/v3/proto/querypb"
 	"github.com/milvus-io/milvus/pkg/v3/util/merr"
-	"github.com/milvus-io/milvus/pkg/v3/util/typeutil"
 )
 
 // newLoadedVectorIndexServer builds a datacoord whose one collection is loaded
@@ -52,22 +51,18 @@ func newLoadedVectorIndexServer(t *testing.T) (*Server, *indexpb.DropIndexReques
 	catalog := catalogmocks.NewDataCoordCatalog(t)
 	catalog.EXPECT().AlterIndexes(mock.Anything, mock.Anything).Return(nil).Maybe()
 	b := broker.NewMockBroker(t)
-	im := &index.IndexMeta{
-		Catalog: catalog,
-		Indexes: map[UniqueID]map[UniqueID]*model.Index{
-			collID: {
-				indexID: {
-					CollectionID: collID,
-					FieldID:      fieldID,
-					IndexID:      indexID,
-					IndexName:    indexName,
-					TypeParams:   []*commonpb.KeyValuePair{{Key: common.DimKey, Value: "128"}},
-					IndexParams:  []*commonpb.KeyValuePair{{Key: common.IndexTypeKey, Value: "IVF_FLAT"}},
-				},
+	im := index.NewIndexMetaForTest(catalog, map[UniqueID]map[UniqueID]*model.Index{
+		collID: {
+			indexID: {
+				CollectionID: collID,
+				FieldID:      fieldID,
+				IndexID:      indexID,
+				IndexName:    indexName,
+				TypeParams:   []*commonpb.KeyValuePair{{Key: common.DimKey, Value: "128"}},
+				IndexParams:  []*commonpb.KeyValuePair{{Key: common.IndexTypeKey, Value: "IVF_FLAT"}},
 			},
 		},
-		SegmentIndexes: typeutil.NewConcurrentMap[UniqueID, *typeutil.ConcurrentMap[UniqueID, *model.SegmentIndex]](),
-	}
+	})
 	s := &Server{
 		meta: &meta.Meta{
 			Catalog:  catalog,

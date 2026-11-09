@@ -39,22 +39,22 @@ func kvPair(k, v string) *commonpb.KeyValuePair { return &commonpb.KeyValuePair{
 
 func TestIndexMeta_ListAllIndexes(t *testing.T) {
 	m := index.NewSegmentIndexMeta(nil)
-	m.Indexes[1] = map[UniqueID]*model.Index{
-		1: {
+	m.PutIndexesForTest(
+		&model.Index{
 			CollectionID: 1, IndexID: 1, FieldID: 101, IndexName: "a",
 			IndexParams: []*commonpb.KeyValuePair{kvPair(common.IndexTypeKey, "HNSW"), kvPair(common.MetricTypeKey, "L2")},
 		},
-		2: {
+		&model.Index{
 			CollectionID: 1, IndexID: 2, FieldID: 102, IndexName: "dropped", IsDeleted: true,
 			IndexParams: []*commonpb.KeyValuePair{kvPair(common.IndexTypeKey, "DISKANN"), kvPair(common.MetricTypeKey, "IP")},
 		},
-	}
-	m.Indexes[2] = map[UniqueID]*model.Index{
-		3: {
+	)
+	m.PutIndexesForTest(
+		&model.Index{
 			CollectionID: 2, IndexID: 3, FieldID: 101, IndexName: "b", IsAutoIndex: true,
 			IndexParams: []*commonpb.KeyValuePair{kvPair(common.IndexTypeKey, "IVF_FLAT"), kvPair(common.MetricTypeKey, "IP")},
 		},
-	}
+	)
 
 	got := m.ListAllIndexes()
 	require.Len(t, got, 2, "deleted indexes are skipped")
@@ -63,8 +63,8 @@ func TestIndexMeta_ListAllIndexes(t *testing.T) {
 	for _, idx := range got {
 		idx.IndexName = "mutated"
 	}
-	assert.Equal(t, "a", m.Indexes[1][1].IndexName)
-	assert.Equal(t, "b", m.Indexes[2][3].IndexName)
+	assert.Equal(t, "a", m.IndexForTest(1, 1).IndexName)
+	assert.Equal(t, "b", m.IndexForTest(2, 3).IndexName)
 
 	assert.Empty(t, index.NewSegmentIndexMeta(nil).ListAllIndexes())
 }
@@ -74,12 +74,12 @@ func TestServer_FeatureUsageEntries(t *testing.T) {
 	assert.Nil(t, (&Server{meta: &meta.Meta{}}).FeatureUsageEntries(featureusage.CollectionContext{}))
 
 	m := index.NewSegmentIndexMeta(nil)
-	m.Indexes[1] = map[UniqueID]*model.Index{
-		1: {CollectionID: 1, IndexID: 1, IndexParams: []*commonpb.KeyValuePair{kvPair(common.IndexTypeKey, "HNSW"), kvPair(common.MetricTypeKey, "L2")}},
-	}
-	m.Indexes[2] = map[UniqueID]*model.Index{
-		2: {CollectionID: 2, IndexID: 2, IsAutoIndex: true, IndexParams: []*commonpb.KeyValuePair{kvPair(common.IndexTypeKey, "HNSW"), kvPair(common.MetricTypeKey, "COSINE")}},
-	}
+	m.PutIndexesForTest(
+		&model.Index{CollectionID: 1, IndexID: 1, IndexParams: []*commonpb.KeyValuePair{kvPair(common.IndexTypeKey, "HNSW"), kvPair(common.MetricTypeKey, "L2")}},
+	)
+	m.PutIndexesForTest(
+		&model.Index{CollectionID: 2, IndexID: 2, IsAutoIndex: true, IndexParams: []*commonpb.KeyValuePair{kvPair(common.IndexTypeKey, "HNSW"), kvPair(common.MetricTypeKey, "COSINE")}},
+	)
 	s := &Server{meta: &meta.Meta{}, domainMetas: domainMetas{indexMeta: m}}
 	entries := s.FeatureUsageEntries(featureusage.CollectionContext{})
 

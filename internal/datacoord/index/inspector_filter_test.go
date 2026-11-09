@@ -29,7 +29,6 @@ import (
 	"github.com/milvus-io/milvus/internal/metastore/model"
 	"github.com/milvus-io/milvus/pkg/v3/proto/datapb"
 	"github.com/milvus-io/milvus/pkg/v3/util/paramtable"
-	"github.com/milvus-io/milvus/pkg/v3/util/typeutil"
 )
 
 func TestIndexInspectorGetUnIndexTaskSegmentsSkipsSegmentsCannotBuildIndexNow(t *testing.T) {
@@ -52,20 +51,16 @@ func TestIndexInspectorGetUnIndexTaskSegmentsSkipsSegmentsCannotBuildIndexNow(t 
 		sortedSegmentID   = UniqueID(2002)
 	)
 	ms := metacache.NewMetaStore(nil)
-	im := &IndexMeta{
-		SegmentBuildInfo: NewSegmentIndexBuildInfo(),
-		SegmentIndexes:   typeutil.NewConcurrentMap[UniqueID, *typeutil.ConcurrentMap[UniqueID, *model.SegmentIndex]](),
-		Indexes: map[UniqueID]map[UniqueID]*model.Index{
-			collID: {
-				indexID: {
-					CollectionID: collID,
-					FieldID:      fieldID,
-					IndexID:      indexID,
-					IndexName:    "default_idx",
-				},
+	im := NewIndexMetaForTest(nil, map[UniqueID]map[UniqueID]*model.Index{
+		collID: {
+			indexID: {
+				CollectionID: collID,
+				FieldID:      fieldID,
+				IndexID:      indexID,
+				IndexName:    "default_idx",
 			},
 		},
-	}
+	})
 	m := &meta.Meta{
 		Segments:     meta.NewSegmentsInfo(ms),
 		MetaStore:    ms,

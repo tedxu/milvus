@@ -107,7 +107,7 @@ func TestExternalCollectionRefreshChecker_IndexWait_DataStaysQueryVisible(t *tes
 		mockey.Mock((*index.IndexMeta).GetUnindexedSegments).Return([]int64{segmentID}).Build()
 
 		return refreshMeta, mt, &ServerHandler{s: &Server{meta: mt, domainMetas: domainMetas{
-			indexMeta:          &index.IndexMeta{},
+			indexMeta:          index.NewSegmentIndexMeta(nil),
 			partitionStatsMeta: &partitionstats.PartitionStatsMeta{PartitionStatsInfos: map[string]map[int64]*partitionstats.PartitionStatsInfo{}},
 		}}}
 	}

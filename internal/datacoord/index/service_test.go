@@ -29,7 +29,6 @@ import (
 	"github.com/milvus-io/milvus/pkg/v3/common"
 	"github.com/milvus-io/milvus/pkg/v3/proto/datapb"
 	"github.com/milvus-io/milvus/pkg/v3/util/merr"
-	"github.com/milvus-io/milvus/pkg/v3/util/typeutil"
 )
 
 func TestMeta_GetHasUnindexTaskSegments(t *testing.T) {
@@ -74,40 +73,36 @@ func TestMeta_GetHasUnindexTaskSegments(t *testing.T) {
 			},
 		},
 	}
-	im := &IndexMeta{
-		SegmentBuildInfo: NewSegmentIndexBuildInfo(),
-		SegmentIndexes:   typeutil.NewConcurrentMap[UniqueID, *typeutil.ConcurrentMap[UniqueID, *model.SegmentIndex]](),
-		Indexes: map[UniqueID]map[UniqueID]*model.Index{
-			collID: {
-				indexID: {
-					TenantID:        "",
-					CollectionID:    collID,
-					FieldID:         fieldID,
-					IndexID:         indexID,
-					IndexName:       indexName,
-					IsDeleted:       false,
-					CreateTime:      0,
-					TypeParams:      nil,
-					IndexParams:     nil,
-					IsAutoIndex:     false,
-					UserIndexParams: nil,
-				},
-				indexID + 1: {
-					TenantID:        "",
-					CollectionID:    collID,
-					FieldID:         fieldID + 1,
-					IndexID:         indexID + 1,
-					IndexName:       indexName + "_1",
-					IsDeleted:       false,
-					CreateTime:      0,
-					TypeParams:      nil,
-					IndexParams:     nil,
-					IsAutoIndex:     false,
-					UserIndexParams: nil,
-				},
+	im := NewIndexMetaForTest(nil, map[UniqueID]map[UniqueID]*model.Index{
+		collID: {
+			indexID: {
+				TenantID:        "",
+				CollectionID:    collID,
+				FieldID:         fieldID,
+				IndexID:         indexID,
+				IndexName:       indexName,
+				IsDeleted:       false,
+				CreateTime:      0,
+				TypeParams:      nil,
+				IndexParams:     nil,
+				IsAutoIndex:     false,
+				UserIndexParams: nil,
+			},
+			indexID + 1: {
+				TenantID:        "",
+				CollectionID:    collID,
+				FieldID:         fieldID + 1,
+				IndexID:         indexID + 1,
+				IndexName:       indexName + "_1",
+				IsDeleted:       false,
+				CreateTime:      0,
+				TypeParams:      nil,
+				IndexParams:     nil,
+				IsAutoIndex:     false,
+				UserIndexParams: nil,
 			},
 		},
-	}
+	})
 	m := &meta.Meta{
 		Segments: meta.NewSegmentsInfo(metacache.NewMetaStore(nil)),
 	}
@@ -123,7 +118,6 @@ func TestMeta_GetHasUnindexTaskSegments(t *testing.T) {
 		segIDs := indexInspector.getUnIndexTaskSegments(context.TODO())
 		assert.Equal(t, []UniqueID{segID}, segIDs)
 
-		im.SegmentIndexes.Insert(segID, typeutil.NewConcurrentMap[UniqueID, *model.SegmentIndex]())
 		im.updateSegmentIndex(&model.SegmentIndex{
 			CollectionID: collID,
 			SegmentID:    segID,

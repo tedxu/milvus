@@ -1965,7 +1965,7 @@ func TestGenSnapshot(t *testing.T) {
 	schema := meta.NewTestSchema()
 
 	// Create minimal components for testing
-	mockIndexMeta := &index.IndexMeta{}
+	mockIndexMeta := index.NewSegmentIndexMeta(nil)
 	mockMeta := &meta.Meta{
 		IndexCatalog: mockIndexMeta,
 	}
@@ -2092,7 +2092,7 @@ func TestGenSnapshot_PreservesCollectionMetadata(t *testing.T) {
 		s: &Server{
 			broker:      broker.NewCoordinatorBroker(mixCoord),
 			meta:        mockMeta,
-			domainMetas: domainMetas{indexMeta: &index.IndexMeta{}},
+			domainMetas: domainMetas{indexMeta: index.NewSegmentIndexMeta(nil)},
 		},
 	}
 
@@ -2163,7 +2163,7 @@ func TestGenSnapshot_UsesPerChannelSeekPositions(t *testing.T) {
 		s: &Server{
 			broker:      broker.NewCoordinatorBroker(meta.NewMockMixCoord()),
 			meta:        mockMeta,
-			domainMetas: domainMetas{indexMeta: &index.IndexMeta{}},
+			domainMetas: domainMetas{indexMeta: index.NewSegmentIndexMeta(nil)},
 		},
 	}
 
@@ -2349,7 +2349,7 @@ func TestGenSnapshot_IncludesV3ManifestOnlySegment(t *testing.T) {
 		s: &Server{
 			broker:      broker.NewCoordinatorBroker(meta.NewMockMixCoord()),
 			meta:        mockMeta,
-			domainMetas: domainMetas{indexMeta: &index.IndexMeta{}},
+			domainMetas: domainMetas{indexMeta: index.NewSegmentIndexMeta(nil)},
 		},
 	}
 
@@ -2444,7 +2444,7 @@ func TestGenSnapshotDependencyErrors(t *testing.T) {
 			}
 			handler := &ServerHandler{s: &Server{broker: &snapshotBroker{}, meta: &meta.Meta{
 				ChunkManager: storage.NewLocalChunkManager(),
-			}, domainMetas: domainMetas{indexMeta: &index.IndexMeta{}}}}
+			}, domainMetas: domainMetas{indexMeta: index.NewSegmentIndexMeta(nil)}}}
 			seedCollections(handler.s)
 			if stage != "collection_missing" {
 				handler.s.meta.AddCollection(&meta.CollectionInfo{
@@ -2502,7 +2502,7 @@ func TestGenSnapshot_RejectsSegmentWithoutChannelSeekPosition(t *testing.T) {
 		s: &Server{
 			broker:      broker.NewCoordinatorBroker(meta.NewMockMixCoord()),
 			meta:        mockMeta,
-			domainMetas: domainMetas{indexMeta: &index.IndexMeta{}},
+			domainMetas: domainMetas{indexMeta: index.NewSegmentIndexMeta(nil)},
 		},
 	}
 
@@ -2574,7 +2574,7 @@ func TestUncompressIndexFilesPreservesIndexStorePathVersion(t *testing.T) {
 			meta: &meta.Meta{
 				ChunkManager: storage.NewLocalChunkManager(objectstorage.RootPath("files")),
 			},
-			domainMetas: domainMetas{indexMeta: &index.IndexMeta{}},
+			domainMetas: domainMetas{indexMeta: index.NewSegmentIndexMeta(nil)},
 		},
 	}
 
@@ -2726,7 +2726,7 @@ func TestGenSnapshot_CommitTimestamp(t *testing.T) {
 	})
 
 	setupHandlerMocks := func(t *testing.T) (*ServerHandler, []*mockey.Mocker) {
-		mockIndexMeta := &index.IndexMeta{}
+		mockIndexMeta := index.NewSegmentIndexMeta(nil)
 		mockMeta := &meta.Meta{IndexCatalog: mockIndexMeta}
 
 		mockMixCoord := mocks2.NewMixCoord(t)

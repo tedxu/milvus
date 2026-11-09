@@ -30,6 +30,7 @@ import (
 	"github.com/milvus-io/milvus/internal/metacache"
 	"github.com/milvus-io/milvus/internal/metastore/kv/querycoord"
 	catalogmocks "github.com/milvus-io/milvus/internal/metastore/mocks"
+	"github.com/milvus-io/milvus/internal/metastore/model"
 	"github.com/milvus-io/milvus/internal/querycoordv2/meta"
 	"github.com/milvus-io/milvus/internal/querycoordv2/params"
 	"github.com/milvus-io/milvus/internal/querycoordv2/session"
@@ -37,7 +38,6 @@ import (
 	"github.com/milvus-io/milvus/internal/querycoordv2/utils"
 	"github.com/milvus-io/milvus/pkg/v3/kv"
 	"github.com/milvus-io/milvus/pkg/v3/proto/datapb"
-	"github.com/milvus-io/milvus/pkg/v3/proto/indexpb"
 	"github.com/milvus-io/milvus/pkg/v3/proto/querypb"
 	"github.com/milvus-io/milvus/pkg/v3/util/etcd"
 	"github.com/milvus-io/milvus/pkg/v3/util/paramtable"
@@ -139,12 +139,7 @@ func (suite *IndexCheckerSuite) TestLoadIndex() {
 			},
 		}}, nil)
 
-	suite.broker.EXPECT().ListIndexes(mock.Anything, int64(1)).Return([]*indexpb.IndexInfo{
-		{
-			FieldID: 101,
-			IndexID: 1000,
-		},
-	}, nil)
+	suite.metaStore.PutIndex(&model.Index{CollectionID: 1, FieldID: 101, IndexID: 1000})
 
 	suite.broker.EXPECT().GetSegmentInfo(mock.Anything, mock.Anything).
 		Return([]*datapb.SegmentInfo{}, nil).Maybe()
@@ -227,12 +222,7 @@ func (suite *IndexCheckerSuite) TestIndexInfoNotMatch() {
 			return nil, nil
 		})
 
-	suite.broker.EXPECT().ListIndexes(mock.Anything, int64(1)).Return([]*indexpb.IndexInfo{
-		{
-			FieldID: 101,
-			IndexID: 1000,
-		},
-	}, nil)
+	suite.metaStore.PutIndex(&model.Index{CollectionID: 1, FieldID: 101, IndexID: 1000})
 	suite.broker.EXPECT().GetSegmentInfo(mock.Anything, mock.Anything).
 		Return([]*datapb.SegmentInfo{}, nil).Maybe()
 	tasks := checker.Check(context.Background())
@@ -275,12 +265,7 @@ func (suite *IndexCheckerSuite) TestGetIndexInfoFailed() {
 	// broker
 	suite.broker.EXPECT().GetIndexInfo(mock.Anything, int64(1), mock.AnythingOfType("int64")).
 		Return(nil, errors.New("mocked error"))
-	suite.broker.EXPECT().ListIndexes(mock.Anything, int64(1)).Return([]*indexpb.IndexInfo{
-		{
-			FieldID: 101,
-			IndexID: 1000,
-		},
-	}, nil)
+	suite.metaStore.PutIndex(&model.Index{CollectionID: 1, FieldID: 101, IndexID: 1000})
 	suite.broker.EXPECT().GetSegmentInfo(mock.Anything, mock.Anything).
 		Return([]*datapb.SegmentInfo{}, nil).Maybe()
 	tasks := checker.Check(context.Background())
@@ -326,20 +311,8 @@ func (suite *IndexCheckerSuite) TestCreateNewIndex() {
 	checker.dist.SegmentDistManager.Update(1, segment)
 
 	// broker
-	suite.broker.EXPECT().ListIndexes(mock.Anything, mock.Anything).Call.Return(
-		func(ctx context.Context, collectionID int64) ([]*indexpb.IndexInfo, error) {
-			return []*indexpb.IndexInfo{
-				{
-					FieldID: 101,
-					IndexID: 1000,
-				},
-				{
-					FieldID: 102,
-					IndexID: 1001,
-				},
-			}, nil
-		},
-	)
+	suite.metaStore.PutIndex(&model.Index{CollectionID: 1, FieldID: 101, IndexID: 1000})
+	suite.metaStore.PutIndex(&model.Index{CollectionID: 1, FieldID: 102, IndexID: 1001})
 	suite.broker.EXPECT().GetIndexInfo(mock.Anything, mock.Anything, mock.AnythingOfType("int64")).
 		Return(map[int64][]*querypb.FieldIndexInfo{2: {
 			{
@@ -428,12 +401,7 @@ func TestRemoveRedundantIndex(t *testing.T) {
 	checker.dist.SegmentDistManager.Update(1, segment)
 
 	// broker
-	broker.EXPECT().ListIndexes(mock.Anything, mock.Anything).Return([]*indexpb.IndexInfo{
-		{
-			FieldID: 101,
-			IndexID: 1000,
-		},
-	}, nil)
+	metaStore.PutIndex(&model.Index{CollectionID: 1, FieldID: 101, IndexID: 1000})
 	broker.EXPECT().GetSegmentInfo(mock.Anything, mock.Anything).
 		Return([]*datapb.SegmentInfo{}, nil).Maybe()
 
@@ -492,16 +460,7 @@ func (suite *IndexCheckerSuite) TestLoadJsonIndex() {
 	checker.dist.SegmentDistManager.Update(1, segment)
 
 	// broker
-	suite.broker.EXPECT().ListIndexes(mock.Anything, mock.Anything).Call.Return(
-		func(ctx context.Context, collectionID int64) ([]*indexpb.IndexInfo, error) {
-			return []*indexpb.IndexInfo{
-				{
-					FieldID: 101,
-					IndexID: 1000,
-				},
-			}, nil
-		},
-	)
+	suite.metaStore.PutIndex(&model.Index{CollectionID: 1, FieldID: 101, IndexID: 1000})
 	mockJSONKeyStats := map[int64]*datapb.JsonKeyStats{
 		101: {
 			FieldID: 101,
@@ -570,16 +529,7 @@ func (suite *IndexCheckerSuite) TestJsonIndexNotMatch() {
 	checker.dist.SegmentDistManager.Update(1, utils.CreateTestSegment(1, 1, 2, 1, 1, "test-insert-channel"))
 
 	// broker
-	suite.broker.EXPECT().ListIndexes(mock.Anything, mock.Anything).Call.Return(
-		func(ctx context.Context, collectionID int64) ([]*indexpb.IndexInfo, error) {
-			return []*indexpb.IndexInfo{
-				{
-					FieldID: 101,
-					IndexID: 1000,
-				},
-			}, nil
-		},
-	)
+	suite.metaStore.PutIndex(&model.Index{CollectionID: 1, FieldID: 101, IndexID: 1000})
 	suite.broker.EXPECT().GetIndexInfo(mock.Anything, mock.Anything, mock.AnythingOfType("int64")).
 		Return(map[int64][]*querypb.FieldIndexInfo{2: {
 			{
@@ -642,16 +592,7 @@ func (suite *IndexCheckerSuite) TestCreateNewJsonIndex() {
 	checker.dist.SegmentDistManager.Update(1, segment)
 
 	// broker
-	suite.broker.EXPECT().ListIndexes(mock.Anything, mock.Anything).Call.Return(
-		func(ctx context.Context, collectionID int64) ([]*indexpb.IndexInfo, error) {
-			return []*indexpb.IndexInfo{
-				{
-					FieldID: 101,
-					IndexID: 1000,
-				},
-			}, nil
-		},
-	)
+	suite.metaStore.PutIndex(&model.Index{CollectionID: 1, FieldID: 101, IndexID: 1000})
 	mockJSONKeyStats := map[int64]*datapb.JsonKeyStats{
 		101: {
 			FieldID: 101,

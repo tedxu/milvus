@@ -18,7 +18,6 @@ import (
 	"github.com/milvus-io/milvus/internal/metastore/model"
 	"github.com/milvus-io/milvus/pkg/v3/proto/datapb"
 	"github.com/milvus-io/milvus/pkg/v3/util/paramtable"
-	"github.com/milvus-io/milvus/pkg/v3/util/typeutil"
 )
 
 func TestCompactionTargetReconcilerTriggersEligibleRewriteSegments(t *testing.T) {
@@ -477,27 +476,24 @@ func TestCompactionTargetReconcilerUsesManualIndexReadinessFilter(t *testing.T) 
 					{FieldID: vectorFieldID, DataType: schemapb.DataType_FloatVector},
 				}},
 			})
-			mt.indexMeta = &index.IndexMeta{
-				Indexes: map[UniqueID]map[UniqueID]*model.Index{
-					collectionID: {
-						indexID: {
-							CollectionID: collectionID,
-							FieldID:      vectorFieldID,
-							IndexID:      indexID,
-						},
+			mt.indexMeta = index.NewIndexMetaForTest(nil, map[UniqueID]map[UniqueID]*model.Index{
+				collectionID: {
+					indexID: {
+						CollectionID: collectionID,
+						FieldID:      vectorFieldID,
+						IndexID:      indexID,
 					},
 				},
-				SegmentIndexes: typeutil.NewConcurrentMap[UniqueID, *typeutil.ConcurrentMap[UniqueID, *model.SegmentIndex]](),
-			}
+			})
 			for _, segmentID := range test.finishedSegmentIDs {
-				finishedIndexes := typeutil.NewConcurrentMap[UniqueID, *model.SegmentIndex]()
-				finishedIndexes.Insert(indexID, &model.SegmentIndex{
+				mt.indexMeta.PutSegmentIndexesForTest(&model.SegmentIndex{
 					CollectionID: collectionID,
 					SegmentID:    segmentID,
 					IndexID:      indexID,
-					IndexState:   commonpb.IndexState_Finished,
+					// Distinct build IDs: the store keys its build lookup by build ID.
+					BuildID:    segmentID,
+					IndexState: commonpb.IndexState_Finished,
 				})
-				mt.indexMeta.SegmentIndexes.Insert(segmentID, finishedIndexes)
 			}
 
 			events, err := newCompactionTargetReconcilerForTest(mt).Trigger(ctx)
@@ -533,9 +529,7 @@ func TestCompactionTargetReconcilerSkipsManualIndexFilterWhenDisabled(t *testing
 	mt := newCompactionTargetReconcilerTestMeta(targetMeta,
 		sortedTargetSegment(1, 1, 10, "ch-1", 0, 199, false),
 	)
-	mt.indexMeta.Indexes[1] = map[UniqueID]*model.Index{
-		1000: {CollectionID: 1, FieldID: 100, IndexID: 1000},
-	}
+	mt.indexMeta.PutIndexesForTest(&model.Index{CollectionID: 1, FieldID: 100, IndexID: 1000})
 
 	events, err := newCompactionTargetReconcilerForTest(mt).Trigger(ctx)
 
@@ -603,9 +597,7 @@ func newCompactionTargetReconcilerTestMeta(targetMeta *CompactionTargetMeta, seg
 	return &compactionTargetReconcilerFixture{
 		Meta:       mt,
 		targetMeta: targetMeta,
-		indexMeta: &index.IndexMeta{
-			Indexes: make(map[UniqueID]map[UniqueID]*model.Index),
-		},
+		indexMeta:  index.NewIndexMetaForTest(nil, nil),
 	}
 }
 

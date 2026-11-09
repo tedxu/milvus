@@ -155,7 +155,7 @@ func (m *Meta) CloseManifestCommitExecutor() {
 func NewMeta(ctx context.Context, catalog metastore.DataCoordCatalog, chunkManager storage.ChunkManager, metaStore metacache.MetaStore, broker broker.Broker, loadDomainMetas DomainMetaLoader) (*Meta, error) {
 	// RootCoord has loaded the collection view before DataCoord starts, so
 	// its IDs (Dropping included) drive per-collection loading in both
-	// MetaStore.LoadFromCatalog and indexMeta.
+	// MetaStore.LoadFromCatalog and MetaStore.LoadIndexesFromCatalog.
 	collectionIDs := metaStore.GetCollectionIDs()
 
 	var (
@@ -191,7 +191,7 @@ func NewMeta(ctx context.Context, catalog metastore.DataCoordCatalog, chunkManag
 
 	g.Go(func() error {
 		var err error
-		indexCatalog, protection, err = loadDomainMetas(ctx, collectionIDs)
+		indexCatalog, protection, err = loadDomainMetas(ctx, metaStore, collectionIDs)
 		return err
 	})
 
@@ -205,6 +205,9 @@ func NewMeta(ctx context.Context, catalog metastore.DataCoordCatalog, chunkManag
 	g.Go(func() error {
 		return metaStore.LoadFromCatalog(ctx, collectionIDs, mt.segmentLoadNormalizer())
 	})
+	g.Go(func() error {
+		return metaStore.LoadIndexesFromCatalog(ctx, collectionIDs)
+	})
 
 	if err := g.Wait(); err != nil {
 		return nil, err
@@ -216,6 +219,9 @@ func NewMeta(ctx context.Context, catalog metastore.DataCoordCatalog, chunkManag
 
 	// Install the index catalog and compaction protection after all goroutines complete
 	mt.IndexCatalog = indexCatalog
+	if indexCatalog != nil {
+		indexCatalog.RebuildFromStore()
+	}
 	if protection != nil {
 		mt.CompactionProtection = protection
 	}
