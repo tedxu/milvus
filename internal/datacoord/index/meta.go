@@ -28,7 +28,6 @@ import (
 	"github.com/hashicorp/golang-lru/v2/expirable"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/samber/lo"
-	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
@@ -45,7 +44,6 @@ import (
 	"github.com/milvus-io/milvus/pkg/v3/mlog"
 	"github.com/milvus-io/milvus/pkg/v3/proto/indexpb"
 	"github.com/milvus-io/milvus/pkg/v3/proto/workerpb"
-	"github.com/milvus-io/milvus/pkg/v3/util/conc"
 	"github.com/milvus-io/milvus/pkg/v3/util/funcutil"
 	"github.com/milvus-io/milvus/pkg/v3/util/indexparams"
 	"github.com/milvus-io/milvus/pkg/v3/util/lock"
@@ -53,7 +51,6 @@ import (
 	"github.com/milvus-io/milvus/pkg/v3/util/metautil"
 	"github.com/milvus-io/milvus/pkg/v3/util/metricsinfo"
 	"github.com/milvus-io/milvus/pkg/v3/util/paramtable"
-	"github.com/milvus-io/milvus/pkg/v3/util/timerecord"
 	"github.com/milvus-io/milvus/pkg/v3/util/tsoutil"
 	"github.com/milvus-io/milvus/pkg/v3/util/typeutil"
 )
@@ -83,7 +80,7 @@ type IndexMeta struct {
 	// store holds the index definitions and segment index records. IndexMeta
 	// is its only writer: it publishes a value only after the catalog write
 	// succeeded, and never modifies a value after publishing it.
-	store metacache.IndexStore
+	store metacache.MetaStore
 
 	// fieldIndexLock serializes index DDL with the resident publication of
 	// segment index records, and lets readers that combine several reads
@@ -154,9 +151,11 @@ func (m *segmentBuildInfo) GetTaskStats() []*metricsinfo.IndexTaskStats {
 	return m.taskStats.Values()
 }
 
-// NewMeta creates meta from provided `kv.TxnKV`
-func NewIndexMeta(ctx context.Context, catalog metastore.DataCoordCatalog, store metacache.IndexStore, collectionIDs []int64) (*IndexMeta, error) {
-	mt := &IndexMeta{
+// NewIndexMeta creates the writer of the index metadata in store. It does
+// no I/O: the store loads the metadata (MetaStore.LoadIndexesFromCatalog),
+// and RebuildFromStore derives the writer's own state from it.
+func NewIndexMeta(ctx context.Context, catalog metastore.DataCoordCatalog, store metacache.MetaStore) *IndexMeta {
+	return &IndexMeta{
 		ctx:                         ctx,
 		Catalog:                     catalog,
 		store:                       store,
@@ -165,96 +164,25 @@ func NewIndexMeta(ctx context.Context, catalog metastore.DataCoordCatalog, store
 		manifestIndexBackfillNotify: make(chan struct{}, 1),
 		manifestIndexRollbackNotify: make(chan struct{}, 1),
 	}
-	err := mt.reloadFromKV(collectionIDs)
-	if err != nil {
-		return nil, err
-	}
-	return mt, nil
 }
 
-// reloadFromKV loads meta from KV storage
-func (m *IndexMeta) reloadFromKV(collectionIDs []int64) error {
-	record := timerecord.NewTimeRecorder("indexMeta-reloadFromKV")
-
-	// Parallel load and process: ListIndexes and ListSegmentIndexes have no dependency,
-	// and they update completely separate data structures so memory updates can also run in parallel.
-	// collectionSegIdxes is hoisted to function scope for the metrics goroutine
-	// launched after g.Wait.
-	collectionSegIdxes := make([][]*model.SegmentIndex, len(collectionIDs))
-	var fieldIndexes []*model.Index
-	g, _ := errgroup.WithContext(m.ctx)
-	g.Go(func() error {
-		var err error
-		fieldIndexes, err = m.Catalog.ListIndexes(m.ctx)
-		if err != nil {
-			mlog.Error(context.TODO(), "indexMeta reloadFromKV load field indexes fail", mlog.Err(err))
-			return err
-		}
-		return nil
-	})
-	g.Go(func() error {
-		pool := conc.NewPool[any](paramtable.Get().MetaStoreCfg.ReadConcurrency.GetAsInt())
-		defer pool.Release()
-		futures := make([]*conc.Future[any], 0, len(collectionIDs))
-		for i, collID := range collectionIDs {
-			i, collID := i, collID
-			futures = append(futures, pool.Submit(func() (any, error) {
-				segIdxes, err := m.Catalog.ListSegmentIndexes(m.ctx, collID)
-				if err != nil {
-					return nil, err
-				}
-				collectionSegIdxes[i] = segIdxes
-				return nil, nil
-			}))
-		}
-		return conc.AwaitAll(futures...)
-	})
-	if err := g.Wait(); err != nil {
-		return err
+// RebuildFromStore seeds the task counters and task stats from what the
+// store loaded. Recovery calls it once, after the store load and before any
+// index write.
+func (m *IndexMeta) RebuildFromStore() {
+	for _, index := range m.store.ListAllIndexes() {
+		m.taskCounts.replaceIndex(nil, index)
 	}
-
-	records := make([]*model.SegmentIndex, 0)
-	for _, segIdxes := range collectionSegIdxes {
-		for _, segIdx := range segIdxes {
-			// ListSegmentIndexes supplied a durable catalog row.
-			segIdx.ManifestPublished = false
-			if segIdx.IndexMemSize == 0 {
-				segIdx.IndexMemSize = segIdx.IndexSerializedSize * paramtable.Get().DataCoordCfg.IndexMemSizeEstimateMultiplier.GetAsUint64()
-			}
-			records = append(records, segIdx)
-		}
-	}
-	// Restored superseded builds remain GC records; the store makes the newest
-	// build of each (segment, index) current, whatever the catalog order.
-	m.store.LoadIndexes(fieldIndexes, records)
-	for _, fieldIndex := range fieldIndexes {
-		m.taskCounts.replaceIndex(nil, fieldIndex)
-	}
-	loaded := make(map[UniqueID]*model.SegmentIndex, len(records))
-	for _, segIdx := range records {
-		m.taskCounts.replaceTask(loaded[segIdx.BuildID], segIdx)
-		loaded[segIdx.BuildID] = segIdx
+	for _, segIdx := range m.store.ListSegmentIndexBuilds() {
+		m.taskCounts.replaceTask(nil, segIdx)
 		m.SegmentBuildInfo.AddForRecovery(segIdx)
 	}
-
-	// Update Prometheus metrics asynchronously, off the startup path, once both
-	// loads are complete. Publishing writes each collection's current stored
-	// size, so it cannot race a live update into a stale value.
-	go func() {
-		m.taskCounts.publishStoredSizes()
-		for _, segIdxes := range collectionSegIdxes {
-			for _, segIdx := range segIdxes {
-				metrics.FlushedSegmentFileNum.WithLabelValues(metrics.IndexFileLabel).Observe(float64(len(segIdx.IndexFileKeys)))
-			}
-		}
-	}()
-
-	mlog.Info(context.TODO(), "indexMeta reloadFromKV done", mlog.Duration("duration", record.ElapseSpan()))
-	return nil
+	// Publishing can wait for a Prometheus scrape; keep it off startup.
+	go m.taskCounts.publishStoredSizes()
 }
 
 // Store returns the shared store the index metadata is published to.
-func (m *IndexMeta) Store() metacache.IndexStore {
+func (m *IndexMeta) Store() metacache.MetaStore {
 	return m.store
 }
 
@@ -859,20 +787,6 @@ func (m *IndexMeta) GetIndexesForCollection(collID UniqueID, indexName string) [
 		}
 	}
 	return indexInfos
-}
-
-// GetIndexesByID resolves exact index references, including definitions retained
-// after logical deletion. It does not substitute a newer index on the same field.
-func (m *IndexMeta) GetIndexesByID(collectionID int64, ids []int64) []*model.Index {
-	m.fieldIndexLock.RLock()
-	defer m.fieldIndexLock.RUnlock()
-	result := make([]*model.Index, 0, len(ids))
-	for _, id := range ids {
-		if index, ok := m.store.GetIndex(collectionID, id); ok {
-			result = append(result, model.ShallowCloneIndex(index))
-		}
-	}
-	return result
 }
 
 // ListAllIndexes returns a shallow clone of every index that is not deleted, across all

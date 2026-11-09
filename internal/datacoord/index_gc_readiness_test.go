@@ -31,7 +31,6 @@ import (
 	"github.com/milvus-io/milvus/internal/datacoord/gc"
 	"github.com/milvus-io/milvus/internal/datacoord/index"
 	"github.com/milvus-io/milvus/internal/datacoord/meta"
-	"github.com/milvus-io/milvus/internal/metacache"
 	"github.com/milvus-io/milvus/internal/metastore"
 	"github.com/milvus-io/milvus/internal/metastore/model"
 	"github.com/milvus-io/milvus/internal/storagev2/packed"
@@ -119,7 +118,7 @@ func newIndexGCReadinessServer(t *testing.T, secondIndex bool) (*Server, *model.
 		catalog.stored[120] = &model.SegmentIndex{CollectionID: 1, PartitionID: 1, SegmentID: 1, IndexID: 20, BuildID: 120, IndexState: commonpb.IndexState_Finished}
 	}
 	var err error
-	s.indexMeta, err = index.NewIndexMeta(context.Background(), catalog, metacache.NewMetaStore(nil), []int64{1})
+	s.indexMeta, err = index.RecoverIndexMetaForTest(context.Background(), catalog, []int64{1})
 	require.NoError(t, err)
 	s.meta.IndexCatalog = s.indexMeta
 	return s, idx, catalog
@@ -198,7 +197,7 @@ func TestIndexGCReadinessMetaFailureSurvivesRestart(t *testing.T) {
 	// Reload the actual indexMeta from persisted catalog rows, including the
 	// Finished state underneath the deletion marker.
 	var err error
-	s.indexMeta, err = index.NewIndexMeta(context.Background(), catalog, metacache.NewMetaStore(nil), []int64{1})
+	s.indexMeta, err = index.RecoverIndexMetaForTest(context.Background(), catalog, []int64{1})
 	require.NoError(t, err)
 	s.meta.IndexCatalog = s.indexMeta
 	gcx.Option.IndexMeta = s.indexMeta

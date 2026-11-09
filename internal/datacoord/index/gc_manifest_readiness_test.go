@@ -23,7 +23,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
-	"github.com/milvus-io/milvus/internal/metacache"
 	"github.com/milvus-io/milvus/internal/metastore/model"
 )
 
@@ -38,7 +37,7 @@ func TestIndexGCManifestReadinessDeletedRecordWinsOnReload(t *testing.T) {
 	}))
 	require.NoError(t, im.DeleteTask(5100))
 	var err error
-	im, err = NewIndexMeta(context.Background(), m.Catalog, metacache.NewMetaStore(nil), []int64{100})
+	im, err = RecoverIndexMetaForTest(context.Background(), m.Catalog, []int64{100})
 	require.NoError(t, err)
 	m.IndexCatalog = im
 	require.NoError(t, m.ReloadSegmentIndexesFromManifests(context.Background()))

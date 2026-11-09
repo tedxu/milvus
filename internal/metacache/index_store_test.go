@@ -86,7 +86,7 @@ func TestIndexStoreLoadPicksNewestBuild(t *testing.T) {
 	b7, b9, b8 := segIdx(10, 100, 7), segIdx(10, 100, 9), segIdx(10, 100, 8)
 	other := segIdx(11, 100, 3)
 	def := &model.Index{CollectionID: 1, IndexID: 100}
-	s.LoadIndexes([]*model.Index{def}, []*model.SegmentIndex{b7, b9, b8, other})
+	s.(*metaStore).loadIndexes([]*model.Index{def}, []*model.SegmentIndex{b7, b9, b8, other})
 
 	current, ok := s.GetSegmentIndex(10, 100)
 	require.True(t, ok)
@@ -170,13 +170,13 @@ func TestIndexStoreUpdateSegmentIndexBuild(t *testing.T) {
 // whatever an earlier, failed attempt left behind.
 func TestIndexStoreLoadReplacesPreviousContents(t *testing.T) {
 	s := NewMetaStore(nil)
-	s.LoadIndexes(
+	s.(*metaStore).loadIndexes(
 		[]*model.Index{{CollectionID: 1, IndexID: 100}, {CollectionID: 2, IndexID: 200}},
 		[]*model.SegmentIndex{segIdx(10, 100, 1), segIdx(20, 200, 2)},
 	)
 	s.PutSegmentIndexes(segIdx(30, 100, 3))
 
-	s.LoadIndexes([]*model.Index{{CollectionID: 1, IndexID: 100}}, []*model.SegmentIndex{segIdx(10, 100, 1)})
+	s.(*metaStore).loadIndexes([]*model.Index{{CollectionID: 1, IndexID: 100}}, []*model.SegmentIndex{segIdx(10, 100, 1)})
 
 	assert.Len(t, s.ListAllIndexes(), 1)
 	_, ok := s.GetIndex(2, 200)

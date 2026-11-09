@@ -52,7 +52,7 @@ func TestReloadFromKV(t *testing.T) {
 		catalog := catalogmocks.NewDataCoordCatalog(t)
 		catalog.EXPECT().ListIndexes(mock.Anything).Return(nil, errors.New("mock"))
 		catalog.EXPECT().ListSegmentIndexes(mock.Anything, mock.Anything).Return(nil, nil).Maybe()
-		_, err := NewIndexMeta(context.TODO(), catalog, metacache.NewMetaStore(nil), []int64{0})
+		_, err := RecoverIndexMetaForTest(context.TODO(), catalog, []int64{0})
 		assert.Error(t, err)
 	})
 
@@ -61,7 +61,7 @@ func TestReloadFromKV(t *testing.T) {
 		catalog.EXPECT().ListIndexes(mock.Anything).Return([]*model.Index{}, nil)
 		catalog.EXPECT().ListSegmentIndexes(mock.Anything, mock.Anything).Return(nil, errors.New("mock"))
 
-		_, err := NewIndexMeta(context.TODO(), catalog, metacache.NewMetaStore(nil), []int64{0})
+		_, err := RecoverIndexMetaForTest(context.TODO(), catalog, []int64{0})
 		assert.Error(t, err)
 	})
 
@@ -83,7 +83,7 @@ func TestReloadFromKV(t *testing.T) {
 			},
 		}, nil)
 
-		mt, err := NewIndexMeta(context.TODO(), catalog, metacache.NewMetaStore(nil), []int64{0})
+		mt, err := RecoverIndexMetaForTest(context.TODO(), catalog, []int64{0})
 		assert.NoError(t, err)
 		assert.NotNil(t, mt)
 	})
@@ -111,7 +111,7 @@ func TestReloadFromKV(t *testing.T) {
 			{SegmentID: 20, CollectionID: collID, IndexID: deadIndexID, BuildID: 200, IndexSerializedSize: deadSize},
 		}, nil)
 
-		mt, err := NewIndexMeta(context.TODO(), catalog, metacache.NewMetaStore(nil), []int64{collID})
+		mt, err := RecoverIndexMetaForTest(context.TODO(), catalog, []int64{collID})
 		assert.NoError(t, err)
 		assert.NotNil(t, mt)
 
@@ -2608,7 +2608,7 @@ func TestStoredIndexFilesSizeMetric(t *testing.T) {
 
 		// Drop the index — gauge goes to 0 immediately. A full
 		// segment-index scan fails the test, to guard against reintroducing it.
-		m.store = noScanIndexStore{IndexStore: m.store, t: t}
+		m.store = noScanIndexStore{MetaStore: m.store, t: t}
 		require.NoError(t, m.MarkIndexAsDeleted(context.TODO(), collID, []UniqueID{indexID}))
 		assert.Equal(t, float64(0), gauge(t),
 			"gauge must be 0 immediately after MarkIndexAsDeleted")
@@ -2839,7 +2839,7 @@ func TestIndexMeta_AllDenseWithDiskIndex(t *testing.T) {
 
 // noScanIndexStore fails the test on a full segment-index scan.
 type noScanIndexStore struct {
-	metacache.IndexStore
+	metacache.MetaStore
 	t *testing.T
 }
 

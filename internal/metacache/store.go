@@ -35,6 +35,7 @@ import (
 	"github.com/milvus-io/milvus-proto/go-api/v3/msgpb"
 	"github.com/milvus-io/milvus-proto/go-api/v3/schemapb"
 	"github.com/milvus-io/milvus/internal/metastore"
+	"github.com/milvus-io/milvus/internal/metastore/model"
 	"github.com/milvus-io/milvus/internal/storage"
 	"github.com/milvus-io/milvus/pkg/v3/metrics"
 	"github.com/milvus-io/milvus/pkg/v3/mlog"
@@ -132,8 +133,28 @@ type MetaView interface {
 	GetCollectionByName(dbName, name string) (*CollectionInfo, bool)
 	GetDatabase(dbName string) (*DatabaseInfo, bool)
 
-	// Indexes — read
-	IndexView
+	// Indexes — read. Values are immutable once published: readers get the
+	// store's own pointers and must not modify them.
+	GetIndex(collectionID, indexID int64) (*model.Index, bool)
+	// GetIndexes returns the collection's definitions, including logically
+	// deleted ones, in no particular order.
+	GetIndexes(collectionID int64) []*model.Index
+	// ListAllIndexes returns every definition of every collection, including
+	// logically deleted ones.
+	ListAllIndexes() []*model.Index
+	// GetSegmentIndex returns the current build of (segment, index).
+	GetSegmentIndex(segmentID, indexID int64) (*model.SegmentIndex, bool)
+	// GetSegmentIndexes returns the current build of each index of the
+	// segment, keyed by index ID, in a new map.
+	GetSegmentIndexes(segmentID int64) map[int64]*model.SegmentIndex
+	// GetSegmentIndexByBuildID finds any build, including one superseded by a
+	// newer build but not yet removed.
+	GetSegmentIndexByBuildID(buildID int64) (*model.SegmentIndex, bool)
+	// ListSegmentIndexBuilds returns every build, including superseded ones.
+	ListSegmentIndexBuilds() []*model.SegmentIndex
+	// GetIndexSnapshot reads the collection's definitions (including deleted
+	// ones) and the current builds of segmentIDs under one read lock.
+	GetIndexSnapshot(collectionID int64, segmentIDs []int64) ([]*model.Index, map[int64]map[int64]*model.SegmentIndex)
 }
 
 // MetaStore is the read-write metacache interface, used by components that
@@ -142,8 +163,25 @@ type MetaView interface {
 type MetaStore interface {
 	MetaView
 
-	// Indexes — write. DataCoord's IndexMeta is the only writer.
-	IndexStore
+	// Indexes — write (in-memory only). DataCoord's IndexMeta is the only
+	// writer, and publishes a value only after the catalog write succeeded.
+	// PutIndex installs a definition and returns the one it replaced.
+	PutIndex(index *model.Index) (old *model.Index)
+	// RemoveIndex drops a definition and returns it.
+	RemoveIndex(collectionID, indexID int64) (old *model.Index)
+	// PutSegmentIndexes makes each record the current build of its
+	// (segment, index) and adds it to the build lookup, under one write lock.
+	// A superseded build stays in the build lookup until RemoveSegmentIndex.
+	// olds[i] is the record that held records[i].BuildID before, or nil.
+	PutSegmentIndexes(records ...*model.SegmentIndex) (olds []*model.SegmentIndex)
+	// UpdateSegmentIndexBuild replaces the build's record in the build lookup.
+	// It replaces the current record of (segment, index) only if that is the
+	// same build, so an update of a superseded build never becomes current.
+	UpdateSegmentIndexBuild(record *model.SegmentIndex)
+	// RemoveSegmentIndex removes the build from the build lookup, and clears
+	// the current record of (segment, index) only if it is the same build.
+	// It reports whether the build was present.
+	RemoveSegmentIndex(record *model.SegmentIndex) (removed bool)
 
 	// Segments — write (in-memory only)
 	PutSegment(segment *datapb.SegmentInfo)
@@ -190,6 +228,10 @@ type MetaStore interface {
 
 	// Loading
 	LoadFromCatalog(ctx context.Context, collectionIDs []int64, normalize SegmentNormalizer) error
+	// LoadIndexesFromCatalog replaces the index definitions and segment index
+	// records with those of collectionIDs in the catalog. Recovery retries
+	// reuse the store, so nothing an earlier attempt loaded survives.
+	LoadIndexesFromCatalog(ctx context.Context, collectionIDs []int64) error
 }
 
 type metaStore struct {

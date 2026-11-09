@@ -53,12 +53,8 @@ type IndexTestMetas struct {
 
 // loadIndexTestMetas returns a DomainMetaLoader that builds only the index meta into out and returns it as the index catalog.
 func LoadIndexTestMetas(catalog metastore.DataCoordCatalog, out *IndexTestMetas) meta.DomainMetaLoader {
-	return func(ctx context.Context, collectionIDs []int64) (meta.SegmentIndexCatalog, meta.CompactionProtection, error) {
-		var err error
-		out.IndexMeta, err = NewIndexMeta(ctx, catalog, metacache.NewMetaStore(nil), collectionIDs)
-		if err != nil {
-			return nil, nil, err
-		}
+	return func(ctx context.Context, store metacache.MetaStore, collectionIDs []int64) (meta.SegmentIndexCatalog, meta.CompactionProtection, error) {
+		out.IndexMeta = NewIndexMeta(ctx, catalog, store)
 		return out.IndexMeta, nil, nil
 	}
 }
@@ -84,6 +80,19 @@ func BootMetaForRestart(t *testing.T, catalog metastore.DataCoordCatalog, collec
 	dm := &IndexTestMetas{}
 	m := meta.BootMetaWithLoader(t, catalog, collectionID, withIndexTestMetas(dm))
 	return m, dm
+}
+
+// RecoverIndexMetaForTest recovers the index metadata of collectionIDs from
+// catalog the way DataCoord recovery does: a new store over catalog loads it,
+// and the returned writer rebuilds its state from that store.
+func RecoverIndexMetaForTest(ctx context.Context, catalog metastore.DataCoordCatalog, collectionIDs []int64) (*IndexMeta, error) {
+	store := metacache.NewMetaStore(catalog)
+	if err := store.LoadIndexesFromCatalog(ctx, collectionIDs); err != nil {
+		return nil, err
+	}
+	im := NewIndexMeta(ctx, catalog, store)
+	im.RebuildFromStore()
+	return im, nil
 }
 
 func NewSegmentIndexMeta(catalog metastore.DataCoordCatalog) *IndexMeta {

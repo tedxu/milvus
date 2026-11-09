@@ -17,64 +17,18 @@
 package metacache
 
 import (
+	"context"
 	"sync"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/milvus-io/milvus/internal/metastore/model"
+	"github.com/milvus-io/milvus/pkg/v3/metrics"
+	"github.com/milvus-io/milvus/pkg/v3/mlog"
+	"github.com/milvus-io/milvus/pkg/v3/util/conc"
+	"github.com/milvus-io/milvus/pkg/v3/util/paramtable"
+	"github.com/milvus-io/milvus/pkg/v3/util/timerecord"
 )
-
-// IndexView reads the index metadata the store holds: collection index
-// definitions and segment index records. Values are immutable once published:
-// readers get the store's own pointers and must not modify them.
-type IndexView interface {
-	GetIndex(collectionID, indexID int64) (*model.Index, bool)
-	// GetIndexes returns the collection's definitions, including logically
-	// deleted ones, in no particular order.
-	GetIndexes(collectionID int64) []*model.Index
-	// ListAllIndexes returns every definition of every collection, including
-	// logically deleted ones.
-	ListAllIndexes() []*model.Index
-	// GetSegmentIndex returns the current build of (segment, index).
-	GetSegmentIndex(segmentID, indexID int64) (*model.SegmentIndex, bool)
-	// GetSegmentIndexes returns the current build of each index of the
-	// segment, keyed by index ID, in a new map.
-	GetSegmentIndexes(segmentID int64) map[int64]*model.SegmentIndex
-	// GetSegmentIndexByBuildID finds any build, including one superseded by a
-	// newer build but not yet removed.
-	GetSegmentIndexByBuildID(buildID int64) (*model.SegmentIndex, bool)
-	// ListSegmentIndexBuilds returns every build, including superseded ones.
-	ListSegmentIndexBuilds() []*model.SegmentIndex
-	// GetIndexSnapshot reads the collection's definitions (including deleted
-	// ones) and the current builds of segmentIDs under one read lock.
-	GetIndexSnapshot(collectionID int64, segmentIDs []int64) ([]*model.Index, map[int64]map[int64]*model.SegmentIndex)
-}
-
-// IndexStore is the writable index section. DataCoord's IndexMeta is its only
-// writer, and publishes a value only after the catalog write succeeded.
-type IndexStore interface {
-	IndexView
-	// PutIndex installs a definition and returns the one it replaced.
-	PutIndex(index *model.Index) (old *model.Index)
-	// RemoveIndex drops a definition and returns it.
-	RemoveIndex(collectionID, indexID int64) (old *model.Index)
-	// PutSegmentIndexes makes each record the current build of its
-	// (segment, index) and adds it to the build lookup, under one write lock.
-	// A superseded build stays in the build lookup until RemoveSegmentIndex.
-	// olds[i] is the record that held records[i].BuildID before, or nil.
-	PutSegmentIndexes(records ...*model.SegmentIndex) (olds []*model.SegmentIndex)
-	// UpdateSegmentIndexBuild replaces the build's record in the build lookup.
-	// It replaces the current record of (segment, index) only if that is the
-	// same build, so an update of a superseded build never becomes current.
-	UpdateSegmentIndexBuild(record *model.SegmentIndex)
-	// RemoveSegmentIndex removes the build from the build lookup, and clears
-	// the current record of (segment, index) only if it is the same build.
-	// It reports whether the build was present.
-	RemoveSegmentIndex(record *model.SegmentIndex) (removed bool)
-	// LoadIndexes replaces the section with reloaded metadata. Every record
-	// enters the build lookup; the highest build ID of each (segment, index)
-	// becomes current, whatever the input order. DataCoord retries recovery
-	// against the same store, so nothing a failed attempt loaded survives.
-	LoadIndexes(indexes []*model.Index, records []*model.SegmentIndex)
-}
 
 // indexSection holds the index metadata under its own lock, separate from
 // the segment lock. Nothing is called back while mu is held.
@@ -230,7 +184,68 @@ func (s *metaStore) RemoveSegmentIndex(record *model.SegmentIndex) bool {
 	return removed
 }
 
-func (s *metaStore) LoadIndexes(indexes []*model.Index, records []*model.SegmentIndex) {
+// LoadIndexesFromCatalog replaces the index section with the definitions
+// and the segment index records of collectionIDs read from the catalog.
+func (s *metaStore) LoadIndexesFromCatalog(ctx context.Context, collectionIDs []int64) error {
+	record := timerecord.NewTimeRecorder("metaStore-loadIndexes")
+	var indexes []*model.Index
+	collectionRecords := make([][]*model.SegmentIndex, len(collectionIDs))
+	g, gctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		var err error
+		indexes, err = s.catalog.ListIndexes(gctx)
+		return err
+	})
+	g.Go(func() error {
+		pool := conc.NewPool[any](paramtable.Get().MetaStoreCfg.ReadConcurrency.GetAsInt())
+		defer pool.Release()
+		futures := make([]*conc.Future[any], 0, len(collectionIDs))
+		for i, collectionID := range collectionIDs {
+			futures = append(futures, pool.Submit(func() (any, error) {
+				records, err := s.catalog.ListSegmentIndexes(gctx, collectionID)
+				collectionRecords[i] = records
+				return nil, err
+			}))
+		}
+		return conc.AwaitAll(futures...)
+	})
+	if err := g.Wait(); err != nil {
+		mlog.Warn(ctx, "metaStore failed to load indexes", mlog.Err(err))
+		return err
+	}
+
+	memSizeMultiplier := paramtable.Get().DataCoordCfg.IndexMemSizeEstimateMultiplier.GetAsUint64()
+	records := make([]*model.SegmentIndex, 0)
+	for _, collection := range collectionRecords {
+		for _, segIdx := range collection {
+			// A catalog row is durable in the catalog, not in a manifest.
+			segIdx.ManifestPublished = false
+			if segIdx.IndexMemSize == 0 {
+				segIdx.IndexMemSize = segIdx.IndexSerializedSize * memSizeMultiplier
+			}
+			records = append(records, segIdx)
+		}
+	}
+	s.loadIndexes(indexes, records)
+
+	// Observe the file counts off the startup path.
+	go func() {
+		for _, segIdx := range records {
+			metrics.FlushedSegmentFileNum.WithLabelValues(metrics.IndexFileLabel).Observe(float64(len(segIdx.IndexFileKeys)))
+		}
+	}()
+	mlog.Info(ctx, "metaStore loaded indexes",
+		mlog.Int("numIndexes", len(indexes)),
+		mlog.Int("numSegmentIndexes", len(records)),
+		mlog.Duration("duration", record.ElapseSpan()))
+	return nil
+}
+
+// loadIndexes replaces the section with reloaded metadata. Every record
+// enters the build lookup; the highest build ID of each (segment, index)
+// becomes current, whatever the input order. DataCoord retries recovery
+// against the same store, so nothing a failed attempt loaded survives.
+func (s *metaStore) loadIndexes(indexes []*model.Index, records []*model.SegmentIndex) {
 	s.index.mu.Lock()
 	defer s.index.mu.Unlock()
 	s.index.defs = make(map[int64]map[int64]*model.Index)

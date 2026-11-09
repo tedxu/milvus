@@ -773,15 +773,13 @@ type domainMetas struct {
 }
 
 // loadDomainMetas returns a DomainMetaLoader that builds every domain meta in parallel into out and returns the index catalog and the compaction protection.
-func loadDomainMetas(catalog metastore.DataCoordCatalog, chunkManager storage.ChunkManager, store metacache.IndexStore, out *domainMetas) meta.DomainMetaLoader {
-	return func(ctx context.Context, collectionIDs []int64) (meta.SegmentIndexCatalog, meta.CompactionProtection, error) {
+func loadDomainMetas(catalog metastore.DataCoordCatalog, chunkManager storage.ChunkManager, out *domainMetas) meta.DomainMetaLoader {
+	return func(ctx context.Context, store metacache.MetaStore, collectionIDs []int64) (meta.SegmentIndexCatalog, meta.CompactionProtection, error) {
 		g, _ := errgroup.WithContext(ctx)
 
-		g.Go(func() error {
-			var err error
-			out.indexMeta, err = index.NewIndexMeta(ctx, catalog, store, collectionIDs)
-			return err
-		})
+		// The store loads the index metadata; NewMeta rebuilds the writer's
+		// state from it once both loads finish.
+		out.indexMeta = index.NewIndexMeta(ctx, catalog, store)
 
 		g.Go(func() error {
 			var err error
@@ -871,7 +869,7 @@ func (s *Server) initMeta(chunkManager storage.ChunkManager) error {
 			err error
 			dm  domainMetas
 		)
-		recoveredMeta, err = meta.NewMeta(s.ctx, s.catalog, chunkManager, s.metaStore, s.broker, loadDomainMetas(s.catalog, chunkManager, s.metaStore, &dm))
+		recoveredMeta, err = meta.NewMeta(s.ctx, s.catalog, chunkManager, s.metaStore, s.broker, loadDomainMetas(s.catalog, chunkManager, &dm))
 		recoveredDomainMetas = dm
 		if err == nil {
 			recoveredMeta.PreparationSchema = coordinatorPreparationSchema
