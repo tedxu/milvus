@@ -453,3 +453,58 @@ func TestSegmentDistMetricsReportsStoreFlags(t *testing.T) {
 	assert.Equal(t, int64(100), metrics[0].NumOfRows)
 	assert.True(t, metrics[0].IsSorted)
 }
+
+func TestNodeRowsAggregates(t *testing.T) {
+	store := metacache.NewMetaStore(nil)
+	store.PutSegment(&datapb.SegmentInfo{ID: 1, CollectionID: 10, NumOfRows: 100})
+	store.PutSegment(&datapb.SegmentInfo{ID: 2, CollectionID: 20, NumOfRows: 200})
+	dist := NewDistributionManager(nil, WithMetaView(store)).SegmentDistManager
+	one := func(version int64) *LoadedSegment {
+		return &LoadedSegment{ID: 1, CollectionID: 10, Channel: "ch", Version: version}
+	}
+	two := &LoadedSegment{ID: 2, CollectionID: 20, Channel: "ch"}
+	miss := &LoadedSegment{ID: 3, CollectionID: 10, Channel: "ch"}
+
+	steps := []struct {
+		name     string
+		apply    func()
+		wantNode map[int64]int64
+		wantColl map[int64]map[int64]int64
+	}{
+		{
+			"add two segments", func() { dist.Update(1, one(1), two) },
+			map[int64]int64{1: 300},
+			map[int64]map[int64]int64{1: {10: 100, 20: 200}},
+		},
+		{
+			"patch a new version of the same segment", func() { dist.Patch(1, []*LoadedSegment{one(2)}, nil) },
+			map[int64]int64{1: 300},
+			map[int64]map[int64]int64{1: {10: 100, 20: 200}},
+		},
+		{
+			"a store miss adds no rows", func() { dist.Patch(1, []*LoadedSegment{miss}, nil) },
+			map[int64]int64{1: 300},
+			map[int64]map[int64]int64{1: {10: 100, 20: 200}},
+		},
+		{
+			"patch removes a segment", func() { dist.Patch(1, nil, []int64{1}) },
+			map[int64]int64{1: 200},
+			map[int64]map[int64]int64{1: {10: 0, 20: 200}},
+		},
+		{
+			"full update drops what the node no longer has", func() { dist.Update(1, two) },
+			map[int64]int64{1: 200},
+			map[int64]map[int64]int64{1: {20: 200}},
+		},
+		{
+			"a node that disappears is deleted", func() { dist.Update(1) },
+			map[int64]int64{},
+			map[int64]map[int64]int64{},
+		},
+	}
+	for _, step := range steps {
+		step.apply()
+		assert.Equal(t, step.wantNode, dist.NodeRows(), step.name)
+		assert.Equal(t, step.wantColl, dist.NodeCollectionRows(), step.name)
+	}
+}

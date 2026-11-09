@@ -70,6 +70,9 @@ func SeedSegments(store metacache.MetaStore, fixtures ...*SegmentFixture) []*Loa
 func SeedInto(dm *DistributionManager, fixtures ...*SegmentFixture) []*LoadedSegment {
 	if dm.view == nil {
 		dm.view = metacache.NewMetaStore(nil)
+		if sdm, ok := dm.SegmentDistManager.(*SegmentDistManager); ok {
+			sdm.view = dm.view
+		}
 	}
 	store, ok := dm.view.(metacache.MetaStore)
 	if !ok {

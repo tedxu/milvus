@@ -18,6 +18,7 @@ package meta
 
 import (
 	"cmp"
+	"maps"
 	"slices"
 	"sync"
 
@@ -219,6 +220,9 @@ type SegmentDistManagerInterface interface {
 	GetByFilter(filters ...SegmentDistFilter) []*LoadedSegment
 	GetSegmentDist(collectionID int64, view metacache.MetaView) []*metricsinfo.Segment
 	GetVersion() int64
+	// NodeRows and NodeCollectionRows return copies of the row totals.
+	NodeRows() map[int64]int64
+	NodeCollectionRows() map[int64]map[int64]int64
 }
 
 type SegmentDistManager struct {
@@ -227,6 +231,11 @@ type SegmentDistManager struct {
 	// nodeID -> []*LoadedSegment
 	segments map[typeutil.UniqueID]nodeSegments
 	version  int64
+
+	// view resolves the rows each entry contributes to the node totals. It
+	// is read before rwmutex is taken, so the two locks are never held
+	// together. A nil view counts every entry as 0 rows.
+	view metacache.MetaView
 }
 
 func (m *SegmentDistManager) GetVersion() int64 {
@@ -240,6 +249,12 @@ type nodeSegments struct {
 	collSegments    map[int64][]*LoadedSegment
 	channelSegments map[string][]*LoadedSegment
 	segmentSegments map[int64][]*LoadedSegment
+
+	// rows is what each segment contributes to the totals, resolved from
+	// the store when the entry was added; a store miss contributes 0.
+	rows     map[int64]int64
+	nodeRows int64
+	collRows map[int64]int64
 }
 
 func (s nodeSegments) Filter(criterion *segDistCriterion, filter func(*LoadedSegment) bool) []*LoadedSegment {
@@ -264,13 +279,63 @@ func (s nodeSegments) Filter(criterion *segDistCriterion, filter func(*LoadedSeg
 	return segments
 }
 
-func composeNodeSegments(segments []*LoadedSegment) nodeSegments {
-	return nodeSegments{
+func composeNodeSegments(segments []*LoadedSegment, rows map[int64]int64) nodeSegments {
+	ns := nodeSegments{
 		segments:        segments,
 		collSegments:    lo.GroupBy(segments, func(segment *LoadedSegment) int64 { return segment.GetCollectionID() }),
 		channelSegments: lo.GroupBy(segments, func(segment *LoadedSegment) string { return segment.GetInsertChannel() }),
 		segmentSegments: lo.GroupBy(segments, func(segment *LoadedSegment) int64 { return segment.GetID() }),
+		rows:            rows,
+		collRows:        make(map[int64]int64),
 	}
+	// Sum over entries, as a scan of the distribution would.
+	for _, segment := range segments {
+		n := rows[segment.GetID()]
+		ns.nodeRows += n
+		ns.collRows[segment.GetCollectionID()] += n
+	}
+	return ns
+}
+
+// resolveRows reads the row count of each segment from the view, in one
+// batched read. It must be called without rwmutex held.
+func (m *SegmentDistManager) resolveRows(segments []*LoadedSegment) map[int64]int64 {
+	rows := make(map[int64]int64, len(segments))
+	if m.view == nil || len(segments) == 0 {
+		return rows
+	}
+	ids := make([]int64, len(segments))
+	for i, segment := range segments {
+		ids[i] = segment.GetID()
+	}
+	m.view.ForEachSegment(ids, func(id int64, info *datapb.SegmentInfo, ok bool) {
+		if ok {
+			rows[id] = info.GetNumOfRows()
+		}
+	})
+	return rows
+}
+
+// NodeRows returns each node's total rows over its loaded sealed segments.
+func (m *SegmentDistManager) NodeRows() map[int64]int64 {
+	m.rwmutex.RLock()
+	defer m.rwmutex.RUnlock()
+	ret := make(map[int64]int64, len(m.segments))
+	for node, ns := range m.segments {
+		ret[node] = ns.nodeRows
+	}
+	return ret
+}
+
+// NodeCollectionRows returns each node's total rows per collection.
+func (m *SegmentDistManager) NodeCollectionRows() map[int64]map[int64]int64 {
+	m.rwmutex.RLock()
+	defer m.rwmutex.RUnlock()
+	ret := make(map[int64]map[int64]int64, len(m.segments))
+	for node, ns := range m.segments {
+		ret[node] = maps.Clone(ns.collRows)
+	}
+	return ret
 }
 
 func NewSegmentDistManager() *SegmentDistManager {
@@ -280,6 +345,7 @@ func NewSegmentDistManager() *SegmentDistManager {
 }
 
 func (m *SegmentDistManager) Update(nodeID typeutil.UniqueID, segments ...*LoadedSegment) {
+	rows := m.resolveRows(segments)
 	m.rwmutex.Lock()
 	defer m.rwmutex.Unlock()
 
@@ -293,7 +359,7 @@ func (m *SegmentDistManager) Update(nodeID typeutil.UniqueID, segments ...*Loade
 	for _, segment := range segments {
 		segment.Node = nodeID
 	}
-	m.segments[nodeID] = composeNodeSegments(segments)
+	m.segments[nodeID] = composeNodeSegments(segments, rows)
 	m.version++
 }
 
@@ -302,6 +368,7 @@ func (m *SegmentDistManager) Patch(nodeID typeutil.UniqueID, upserts []*LoadedSe
 		return
 	}
 
+	upsertRows := m.resolveRows(upserts)
 	m.rwmutex.Lock()
 	defer m.rwmutex.Unlock()
 
@@ -315,9 +382,10 @@ func (m *SegmentDistManager) Patch(nodeID typeutil.UniqueID, upserts []*LoadedSe
 		upsertSegments[segment.GetID()] = segment
 	}
 
-	existing := m.segments[nodeID].segments
-	segments := make([]*LoadedSegment, 0, len(existing)+len(upserts))
-	for _, segment := range existing {
+	existing := m.segments[nodeID]
+	segments := make([]*LoadedSegment, 0, len(existing.segments)+len(upserts))
+	rows := make(map[int64]int64, len(existing.rows)+len(upsertRows))
+	for _, segment := range existing.segments {
 		segmentID := segment.GetID()
 		if _, ok := removedSegments[segmentID]; ok {
 			continue
@@ -326,14 +394,16 @@ func (m *SegmentDistManager) Patch(nodeID typeutil.UniqueID, upserts []*LoadedSe
 			continue
 		}
 		segments = append(segments, segment)
+		rows[segmentID] = existing.rows[segmentID]
 	}
-	for _, segment := range upsertSegments {
+	for segmentID, segment := range upsertSegments {
 		segments = append(segments, segment)
+		rows[segmentID] = upsertRows[segmentID]
 	}
 	if len(segments) == 0 {
 		delete(m.segments, nodeID)
 	} else {
-		m.segments[nodeID] = composeNodeSegments(segments)
+		m.segments[nodeID] = composeNodeSegments(segments, rows)
 	}
 	m.version++
 }

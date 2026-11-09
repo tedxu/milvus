@@ -49,6 +49,9 @@ func NewDistributionManager(nodeManager *session.NodeManager, opts ...Distributi
 	for _, opt := range opts {
 		opt(dm)
 	}
+	if sdm, ok := dm.SegmentDistManager.(*SegmentDistManager); ok {
+		sdm.view = dm.view
+	}
 	return dm
 }
 
