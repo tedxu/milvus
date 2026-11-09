@@ -61,14 +61,15 @@ func TestScoreBasedAssignPolicy_AssignSegment_BasicFunctionality(t *testing.T) {
 	}
 
 	nodes := []int64{1, 2, 3}
-	plans := policy.AssignSegment(context.Background(), 100, SegmentRefsFromDist(segments), nodes, false)
+	refs := SegmentRefsFromDist(segments)
+	plans := policy.AssignSegment(context.Background(), 100, refs, nodes, false)
 
 	assert.NotNil(t, plans)
 	assert.Equal(t, 3, len(plans))
 
-	// Verify all segments are assigned
+	// Verify all segments are assigned, in the order AssignSegment sorted refs
 	for i, plan := range plans {
-		assert.Equal(t, segments[i].ID, plan.Segment.ID)
+		assert.Equal(t, refs[i].ID, plan.Segment.ID)
 		assert.Contains(t, nodes, plan.To)
 		assert.Equal(t, int64(-1), plan.From)
 	}
