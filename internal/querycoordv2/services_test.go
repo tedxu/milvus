@@ -230,8 +230,8 @@ func (suite *ServiceSuite) SetupTest() {
 
 	suite.store = querycoord.NewCatalog(suite.kv)
 	suite.nodeMgr = session.NewNodeManager()
-	suite.dist = meta.NewDistributionManager(suite.nodeMgr)
 	suite.metaStore = metacache.NewMetaStore(nil)
+	suite.dist = meta.NewDistributionManager(suite.nodeMgr, meta.WithMetaView(suite.metaStore))
 	metacachetest.Collections(suite.metaStore).PutDatabase(&metacache.DatabaseInfo{ID: 1, Name: util.DefaultDBName})
 	for _, collectionID := range suite.collections {
 		suite.metaStore.PutCollection(&metacache.CollectionInfo{
@@ -281,7 +281,7 @@ func (suite *ServiceSuite) SetupTest() {
 		suite.targetMgr,
 	)
 	meta.GlobalFailedLoadCache = meta.NewFailedLoadCache()
-	suite.distMgr = meta.NewDistributionManager(suite.nodeMgr)
+	suite.distMgr = meta.NewDistributionManager(suite.nodeMgr, meta.WithMetaView(suite.metaStore))
 	suite.distController = dist.NewMockController(suite.T())
 
 	suite.collectionObserver = observers.NewCollectionObserver(
@@ -303,6 +303,7 @@ func (suite *ServiceSuite) SetupTest() {
 		metricsCacheManager: metricsinfo.NewMetricsCacheManager(),
 		dist:                suite.dist,
 		meta:                suite.meta,
+		metaView:            suite.metaStore,
 		targetMgr:           suite.targetMgr,
 		broker:              suite.broker,
 		targetObserver:      suite.targetObserver,
