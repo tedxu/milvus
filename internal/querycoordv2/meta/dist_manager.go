@@ -20,6 +20,7 @@ import (
 	"context"
 
 	"github.com/milvus-io/milvus/internal/json"
+	"github.com/milvus-io/milvus/internal/metacache"
 	"github.com/milvus-io/milvus/internal/querycoordv2/session"
 	"github.com/milvus-io/milvus/pkg/v3/mlog"
 	"github.com/milvus-io/milvus/pkg/v3/util/metricsinfo"
@@ -41,8 +42,8 @@ func NewDistributionManager(nodeManager *session.NodeManager) *DistributionManag
 // It includes segments, DM channels, and leader views.
 // If there are no segments, channels, or leader views, it returns an empty string.
 // In case of an error during JSON marshaling, it returns the error.
-func (dm *DistributionManager) GetDistributionJSON(collectionID int64) string {
-	segments := dm.SegmentDistManager.GetSegmentDist(collectionID)
+func (dm *DistributionManager) GetDistributionJSON(collectionID int64, view metacache.MetaView) string {
+	segments := dm.SegmentDistManager.GetSegmentDist(collectionID, view)
 	channels := dm.ChannelDistManager.GetChannelDist(collectionID)
 	leaderView := dm.ChannelDistManager.GetLeaderView(collectionID)
 

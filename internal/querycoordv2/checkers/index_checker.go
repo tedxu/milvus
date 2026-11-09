@@ -24,6 +24,7 @@ import (
 
 	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
 	"github.com/milvus-io/milvus-proto/go-api/v3/schemapb"
+	"github.com/milvus-io/milvus/internal/metacache"
 	"github.com/milvus-io/milvus/internal/querycoordv2/meta"
 	"github.com/milvus-io/milvus/internal/querycoordv2/params"
 	"github.com/milvus-io/milvus/internal/querycoordv2/session"
@@ -37,8 +38,6 @@ import (
 	"github.com/milvus-io/milvus/pkg/v3/util/typeutil"
 )
 
-const MaxSegmentNumPerGetIndexInfoRPC = 1024
-
 var _ Checker = (*IndexChecker)(nil)
 
 // IndexChecker perform segment index check.
@@ -46,7 +45,6 @@ type IndexChecker struct {
 	*checkerActivation
 	meta    *meta.Meta
 	dist    *meta.DistributionManager
-	broker  meta.Broker
 	nodeMgr *session.NodeManager
 
 	targetMgr meta.TargetManagerInterface
@@ -55,7 +53,6 @@ type IndexChecker struct {
 func NewIndexChecker(
 	meta *meta.Meta,
 	dist *meta.DistributionManager,
-	broker meta.Broker,
 	nodeMgr *session.NodeManager,
 	targetMgr meta.TargetManagerInterface,
 ) *IndexChecker {
@@ -63,7 +60,6 @@ func NewIndexChecker(
 		checkerActivation: newCheckerActivation(),
 		meta:              meta,
 		dist:              dist,
-		broker:            broker,
 		nodeMgr:           nodeMgr,
 		targetMgr:         targetMgr,
 	}
@@ -104,104 +100,67 @@ func (c *IndexChecker) Check(ctx context.Context) []task.Task {
 }
 
 func (c *IndexChecker) checkReplica(ctx context.Context, collection *meta.Collection, replica *meta.Replica, indexInfos []*indexpb.IndexInfo, schema *schemapb.CollectionSchema) []task.Task {
-	log := mlog.With(
-		mlog.FieldCollectionID(collection.GetCollectionID()),
-	)
-	var tasks []task.Task
-
+	view := c.meta.MetaView()
 	segments := c.dist.SegmentDistManager.GetByFilter(meta.WithCollectionID(replica.GetCollectionID()), meta.WithReplica(replica))
-	idSegments := make(map[int64]*meta.Segment)
-
 	roNodeSet := typeutil.NewUniqueSet(replica.GetRONodes()...)
-	targets := make(map[int64][]int64) // segmentID => FieldID
 
-	idSegmentsStats := make(map[int64]*meta.Segment)
-	targetsStats := make(map[int64][]int64) // segmentID => FieldID
 	segmentsToUpdate := make(map[int64]*meta.Segment)
+	segmentsStatsToUpdate := make(map[int64]*meta.Segment)
 	for _, segment := range segments {
 		// skip update index in read only node
 		if roNodeSet.Contain(segment.Node) {
 			continue
 		}
-		missing := c.checkSegment(segment, indexInfos)
-		missingStats := c.checkSegmentStats(segment, schema, collection.LoadFields)
-		if len(missing) > 0 {
-			targets[segment.GetID()] = missing
-			idSegments[segment.GetID()] = segment
-		} else if len(missingStats) > 0 {
-			targetsStats[segment.GetID()] = missingStats
-			idSegmentsStats[segment.GetID()] = segment
+		// A segment the store no longer has is on its way out; the segment
+		// checker releases it.
+		storeSegment, ok := view.GetSegment(segment.GetID())
+		if !ok {
+			continue
+		}
+		if missing, ready := c.checkSegment(view, segment, indexInfos); missing {
+			if ready {
+				segmentsToUpdate[segment.GetID()] = segment
+			}
+		} else {
+			for _, fieldID := range c.checkSegmentStats(segment, schema, collection.LoadFields) {
+				if _, ok := storeSegment.GetJsonKeyStats()[fieldID]; ok {
+					segmentsStatsToUpdate[segment.GetID()] = segment
+					break
+				}
+			}
 		}
 
-		redundantIndices := c.checkRedundantIndices(segment, indexInfos)
-		if len(redundantIndices) > 0 {
+		if len(c.checkRedundantIndices(segment, indexInfos)) > 0 {
 			segmentsToUpdate[segment.GetID()] = segment
 		}
 	}
 
-	for _, segmentIDs := range lo.Chunk(lo.Keys(idSegments), MaxSegmentNumPerGetIndexInfoRPC) {
-		segmentIndexInfos, err := c.broker.GetIndexInfo(ctx, collection.GetCollectionID(), segmentIDs...)
-		if err != nil {
-			log.Warn(ctx, "failed to get indexInfo for segments", mlog.Int64s("segmentIDs", segmentIDs), mlog.Err(err))
-			continue
-		}
-		for segmentID, segmentIndexInfo := range segmentIndexInfos {
-			fields := targets[segmentID]
-			missingFields := typeutil.NewSet(fields...)
-			for _, fieldIndexInfo := range segmentIndexInfo {
-				if missingFields.Contain(fieldIndexInfo.GetFieldID()) &&
-					fieldIndexInfo.GetEnableIndex() &&
-					len(fieldIndexInfo.GetIndexFilePaths()) > 0 {
-					segmentsToUpdate[segmentID] = idSegments[segmentID]
-				}
-			}
-		}
-	}
-
-	tasks = lo.FilterMap(lo.Values(segmentsToUpdate), func(segment *meta.Segment, _ int) (task.Task, bool) {
+	tasks := lo.FilterMap(lo.Values(segmentsToUpdate), func(segment *meta.Segment, _ int) (task.Task, bool) {
 		return c.createSegmentUpdateTask(ctx, segment, replica)
 	})
-
-	segmentsStatsToUpdate := typeutil.NewSet[int64]()
-	for _, segmentIDs := range lo.Chunk(lo.Keys(idSegmentsStats), MaxSegmentNumPerGetIndexInfoRPC) {
-		segmentInfos, err := c.broker.GetSegmentInfo(ctx, segmentIDs...)
-		if err != nil {
-			log.Warn(ctx, "failed to get SegmentInfo for segments", mlog.Int64s("segmentIDs", segmentIDs), mlog.Err(err))
-			continue
-		}
-		for _, segmentInfo := range segmentInfos {
-			fields := targetsStats[segmentInfo.ID]
-			missingFields := typeutil.NewSet(fields...)
-			for field := range segmentInfo.GetJsonKeyStats() {
-				if missingFields.Contain(field) {
-					segmentsStatsToUpdate.Insert(segmentInfo.ID)
-				}
-			}
-		}
-	}
-
-	tasksStats := lo.FilterMap(segmentsStatsToUpdate.Collect(), func(segmentID int64, _ int) (task.Task, bool) {
-		return c.createSegmentStatsUpdateTask(ctx, idSegmentsStats[segmentID], replica)
+	tasksStats := lo.FilterMap(lo.Values(segmentsStatsToUpdate), func(segment *meta.Segment, _ int) (task.Task, bool) {
+		return c.createSegmentStatsUpdateTask(ctx, segment, replica)
 	})
-	tasks = append(tasks, tasksStats...)
-
-	return tasks
+	return append(tasks, tasksStats...)
 }
 
-func (c *IndexChecker) checkSegment(segment *meta.Segment, indexInfos []*indexpb.IndexInfo) (fieldIDs []int64) {
-	var result []int64
+// checkSegment reports whether the node lacks some live index of the
+// segment (missing), and whether the store has a build of a missing index
+// that can be loaded: finished, not deleted, and with index files (ready).
+// Only absent index IDs count: a reopen loads the index IDs a segment lacks,
+// so a newer build of a loaded index would load nothing.
+func (c *IndexChecker) checkSegment(view metacache.MetaView, segment *meta.Segment, indexInfos []*indexpb.IndexInfo) (missing, ready bool) {
 	for _, indexInfo := range indexInfos {
-		fieldID, indexID := indexInfo.FieldID, indexInfo.IndexID
-		info, ok := segment.IndexInfo[indexID]
-		if !ok {
-			result = append(result, fieldID)
+		if _, ok := segment.IndexBuilds[indexInfo.GetIndexID()]; ok {
 			continue
 		}
-		if indexID != info.GetIndexID() || !info.GetEnableIndex() {
-			result = append(result, fieldID)
+		missing = true
+		record, ok := view.GetSegmentIndex(segment.GetID(), indexInfo.GetIndexID())
+		if ok && record.IndexState == commonpb.IndexState_Finished && !record.IsDeleted && len(record.IndexFileKeys) > 0 {
+			ready = true
 		}
 	}
-	return result
+	return missing, ready
 }
 
 // checkRedundantIndices returns redundant indexIDs for each segment
@@ -213,7 +172,7 @@ func (c *IndexChecker) checkRedundantIndices(segment *meta.Segment, indexInfos [
 		indexInfoMap.Insert(indexInfo.IndexID)
 	}
 
-	for indexID := range segment.IndexInfo {
+	for indexID := range segment.IndexBuilds {
 		if !indexInfoMap.Contain(indexID) {
 			redundant = append(redundant, indexID)
 		}
@@ -267,7 +226,7 @@ func (c *IndexChecker) checkSegmentStats(segment *meta.Segment, schema *schemapb
 			fieldID := field.GetFieldID()
 			if h.EnableJSONKeyStatsIndex() {
 				if _, ok := loadFieldMap[fieldID]; ok {
-					if info, ok := segment.JSONStatsField[fieldID]; !ok || info.GetDataFormatVersion() < common.JSONStatsDataFormatVersion {
+					if format, ok := segment.JSONStatsFormats[fieldID]; !ok || format < common.JSONStatsDataFormatVersion {
 						result = append(result, fieldID)
 					}
 				}

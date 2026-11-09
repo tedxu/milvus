@@ -555,7 +555,6 @@ func (suite *ServerSuite) hackServer() {
 		suite.server.targetMgr,
 		suite.server.nodeMgr,
 		suite.server.taskScheduler,
-		suite.server.broker,
 	)
 	suite.server.targetObserver = observers.NewTargetObserver(
 		suite.server.meta,

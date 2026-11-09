@@ -109,7 +109,7 @@ func (s *Server) getCollectionSegmentInfo(ctx context.Context, collection int64)
 			info = &querypb.SegmentInfo{}
 			infos[segment.GetID()] = info
 		}
-		utils.MergeMetaSegmentIntoSegmentInfo(info, segment)
+		utils.MergeMetaSegmentIntoSegmentInfo(s.metaView, info, segment)
 	}
 
 	return lo.Values(infos)
@@ -349,7 +349,7 @@ func (s *Server) getSegmentsJSON(ctx context.Context, req *milvuspb.GetMetricsRe
 
 	if in == metricsinfo.MetricsRequestParamsInQC {
 		collectionID := metricsinfo.GetCollectionIDFromRequest(jsonReq)
-		filteredSegments := s.dist.SegmentDistManager.GetSegmentDist(collectionID)
+		filteredSegments := s.dist.SegmentDistManager.GetSegmentDist(collectionID, s.metaView)
 		bs, err := json.Marshal(filteredSegments)
 		if err != nil {
 			mlog.Warn(context.TODO(), "marshal segment value failed", mlog.Int64("collectionID", collectionID), mlog.String("err", err.Error()))

@@ -227,6 +227,32 @@ func projectForDistribution(info *datapb.SegmentInfo) *datapb.SegmentInfo {
 	}
 }
 
+// loadedIndexBuilds keeps only the loaded build of each index the node
+// reports; the rest of FieldIndexInfo is read from the shared store.
+func loadedIndexBuilds(infos map[int64]*querypb.FieldIndexInfo) map[int64]int64 {
+	if len(infos) == 0 {
+		return nil
+	}
+	builds := make(map[int64]int64, len(infos))
+	for indexID, info := range infos {
+		builds[indexID] = info.GetBuildID()
+	}
+	return builds
+}
+
+// loadedJSONStatsFormats keeps only the loaded data format version of each
+// field's JSON key stats.
+func loadedJSONStatsFormats(infos map[int64]*querypb.JsonStatsInfo) map[int64]int64 {
+	if len(infos) == 0 {
+		return nil
+	}
+	formats := make(map[int64]int64, len(infos))
+	for fieldID, info := range infos {
+		formats[fieldID] = info.GetDataFormatVersion()
+	}
+	return formats
+}
+
 func (dh *distHandler) updateSegmentsDistribution(ctx context.Context, resp *querypb.GetDataDistributionResponse) {
 	updates := make([]*meta.Segment, 0, len(resp.GetSegments()))
 	for _, s := range resp.GetSegments() {
@@ -251,8 +277,8 @@ func (dh *distHandler) updateSegmentsDistribution(ctx context.Context, resp *que
 			Node:               resp.GetNodeID(),
 			Version:            s.GetVersion(),
 			LastDeltaTimestamp: s.GetLastDeltaTimestamp(),
-			IndexInfo:          s.GetIndexInfo(),
-			JSONStatsField:     s.GetJsonStatsInfo(),
+			IndexBuilds:        loadedIndexBuilds(s.GetIndexInfo()),
+			JSONStatsFormats:   loadedJSONStatsFormats(s.GetJsonStatsInfo()),
 			ManifestPath:       s.GetManifestPath(),
 			DataVersion:        s.DataVersion,
 		})

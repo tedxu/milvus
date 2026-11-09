@@ -17,11 +17,14 @@
 package meta
 
 import (
+	"cmp"
+	"slices"
 	"sync"
 
 	"github.com/samber/lo"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/milvus-io/milvus/internal/metacache"
 	"github.com/milvus-io/milvus/internal/util/metrics"
 	"github.com/milvus-io/milvus/pkg/v3/proto/datapb"
 	"github.com/milvus-io/milvus/pkg/v3/proto/querypb"
@@ -133,12 +136,16 @@ func WithChannel(channelName string) SegmentDistFilter {
 
 type Segment struct {
 	*datapb.SegmentInfo
-	Node               int64                             // Node the segment is in
-	Version            int64                             // Version is the timestamp of loading segment
-	LastDeltaTimestamp uint64                            // The timestamp of the last delta record
-	IndexInfo          map[int64]*querypb.FieldIndexInfo // index info of loaded segment, indexID -> FieldIndexInfo
-	JSONStatsField     map[int64]*querypb.JsonStatsInfo  // json index info of loaded segment
-	ManifestPath       string                            // current manifest path of loaded segment
+	Node               int64  // Node the segment is in
+	Version            int64  // Version is the timestamp of loading segment
+	LastDeltaTimestamp uint64 // The timestamp of the last delta record
+	// IndexBuilds maps each loaded index ID to the build the node loaded.
+	// Every other index field is read from the shared store.
+	IndexBuilds map[int64]int64
+	// JSONStatsFormats maps each field with loaded JSON key stats to the
+	// data format version the node loaded.
+	JSONStatsFormats map[int64]int64
+	ManifestPath     string // current manifest path of loaded segment
 	// DataVersion tracks the storage v2 data version of the loaded segment.
 	// nil means the reporting QueryNode does not support DataVersion (mixed-version rollout),
 	// so the field is not comparable.
@@ -151,11 +158,38 @@ func SegmentFromInfo(info *datapb.SegmentInfo) *Segment {
 	}
 }
 
-func newSegmentMetricsFrom(segment *Segment) *metricsinfo.Segment {
+// LoadedFieldIndexInfos describes the indexes a node loaded for a segment,
+// sorted by index ID. builds maps index ID to the loaded build; every other
+// field comes from view: the definition for field and name, and the current
+// segment index record for size and versions. A field the store no longer
+// has is left zero. Params and file paths are not filled.
+func LoadedFieldIndexInfos(view metacache.MetaView, collectionID, segmentID int64, builds map[int64]int64) []*querypb.FieldIndexInfo {
+	infos := make([]*querypb.FieldIndexInfo, 0, len(builds))
+	for indexID, buildID := range builds {
+		info := &querypb.FieldIndexInfo{EnableIndex: true, IndexID: indexID, BuildID: buildID}
+		if index, ok := view.GetIndex(collectionID, indexID); ok {
+			info.FieldID = index.FieldID
+			info.IndexName = index.IndexName
+		}
+		if record, ok := view.GetSegmentIndex(segmentID, indexID); ok {
+			info.IndexSize = int64(record.IndexMemSize)
+			info.NumRows = record.NumRows
+			info.IndexVersion = record.IndexVersion
+			info.CurrentIndexVersion = record.CurrentIndexVersion
+			info.CurrentScalarIndexVersion = record.CurrentScalarIndexVersion
+		}
+		infos = append(infos, info)
+	}
+	slices.SortFunc(infos, func(a, b *querypb.FieldIndexInfo) int { return cmp.Compare(a.GetIndexID(), b.GetIndexID()) })
+	return infos
+}
+
+func newSegmentMetricsFrom(segment *Segment, view metacache.MetaView) *metricsinfo.Segment {
 	convertedSegment := metrics.NewSegmentFrom(segment.SegmentInfo)
 	convertedSegment.NodeID = segment.Node
 	convertedSegment.LoadedTimestamp = tsoutil.PhysicalTimeFormat(segment.LastDeltaTimestamp)
-	convertedSegment.IndexedFields = lo.Map(lo.Values(segment.IndexInfo), func(e *querypb.FieldIndexInfo, i int) *metricsinfo.IndexedField {
+	loaded := LoadedFieldIndexInfos(view, segment.GetCollectionID(), segment.GetID(), segment.IndexBuilds)
+	convertedSegment.IndexedFields = lo.Map(loaded, func(e *querypb.FieldIndexInfo, i int) *metricsinfo.IndexedField {
 		return &metricsinfo.IndexedField{
 			IndexFieldID: e.FieldID,
 			IndexID:      e.IndexID,
@@ -184,7 +218,7 @@ type SegmentDistManagerInterface interface {
 	Update(nodeID typeutil.UniqueID, segments ...*Segment)
 	Patch(nodeID typeutil.UniqueID, upserts []*Segment, removedSegmentIDs []int64)
 	GetByFilter(filters ...SegmentDistFilter) []*Segment
-	GetSegmentDist(collectionID int64) []*metricsinfo.Segment
+	GetSegmentDist(collectionID int64, view metacache.MetaView) []*metricsinfo.Segment
 	GetVersion() int64
 }
 
@@ -338,7 +372,7 @@ func (m *SegmentDistManager) GetByFilter(filters ...SegmentDistFilter) []*Segmen
 	return ret
 }
 
-func (m *SegmentDistManager) GetSegmentDist(collectionID int64) []*metricsinfo.Segment {
+func (m *SegmentDistManager) GetSegmentDist(collectionID int64, view metacache.MetaView) []*metricsinfo.Segment {
 	m.rwmutex.RLock()
 	defer m.rwmutex.RUnlock()
 
@@ -348,7 +382,7 @@ func (m *SegmentDistManager) GetSegmentDist(collectionID int64) []*metricsinfo.S
 			if collectionID > 0 && segment.GetCollectionID() != collectionID {
 				continue
 			}
-			segments = append(segments, newSegmentMetricsFrom(segment))
+			segments = append(segments, newSegmentMetricsFrom(segment, view))
 		}
 	}
 

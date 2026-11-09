@@ -128,7 +128,7 @@ func (suite *OpsServiceSuite) SetupTest() {
 	suite.distController = dist.NewMockController(suite.T())
 
 	suite.checkerController = checkers.NewCheckerController(suite.meta, suite.distMgr,
-		suite.targetMgr, suite.nodeMgr, suite.taskScheduler, suite.broker)
+		suite.targetMgr, suite.nodeMgr, suite.taskScheduler)
 
 	suite.server = &Server{
 		kv:                  suite.kv,

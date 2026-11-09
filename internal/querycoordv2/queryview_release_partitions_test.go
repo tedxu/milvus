@@ -37,6 +37,7 @@ func TestReleasePartitionsWaitsForHandoff(t *testing.T) {
 				require.NoError(t, store.Put(t.Context(), cfg))
 			}
 			var closed atomic.Bool
+			broadcasted := make(chan struct{})
 			patches := []*mockey.Mocker{
 				mockey.Mock((*Server).startBroadcastWithCollectionIDLock).Return(releasePartitionsBroadcaster{}, nil).Build(),
 				mockey.Mock(releasePartitionsBroadcaster.Close).To(func(releasePartitionsBroadcaster) { closed.Store(true) }).Build(),
@@ -51,6 +52,7 @@ func TestReleasePartitionsWaitsForHandoff(t *testing.T) {
 					if scenario == "broadcast error" {
 						return nil, merr.ErrServiceUnavailable
 					}
+					defer close(broadcasted)
 					return nil, store.Put(t.Context(), cfg)
 				}).Build(),
 			}
@@ -75,6 +77,15 @@ func TestReleasePartitionsWaitsForHandoff(t *testing.T) {
 			if scenario == "broadcast error" {
 				require.ErrorIs(t, <-done, merr.ErrServiceUnavailable)
 				return
+			}
+			if scenario == "partial" || scenario == "cancel" {
+				// A shard report carries the config version current when it is
+				// taken, so report progress only after the new config is stored.
+				select {
+				case <-broadcasted:
+				case <-ctx.Done():
+					t.Fatal("release did not broadcast")
+				}
 			}
 			assertReadinessBlocked(t, done)
 			require.False(t, closed.Load(), "handoff must retain collection serialization")

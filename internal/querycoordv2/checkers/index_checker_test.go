@@ -20,11 +20,11 @@ import (
 	"context"
 	"testing"
 
-	"github.com/cockroachdb/errors"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
+	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
 	"github.com/milvus-io/milvus-proto/go-api/v3/schemapb"
 	etcdkv "github.com/milvus-io/milvus/internal/kv/etcd"
 	"github.com/milvus-io/milvus/internal/metacache"
@@ -49,7 +49,6 @@ type IndexCheckerSuite struct {
 	checker   *IndexChecker
 	meta      *meta.Meta
 	metaStore metacache.MetaStore
-	broker    *meta.MockBroker
 	nodeMgr   *session.NodeManager
 	targetMgr *meta.MockTargetManager
 }
@@ -79,10 +78,9 @@ func (suite *IndexCheckerSuite) SetupTest() {
 	suite.metaStore = metacache.NewMetaStore(nil)
 	suite.meta = meta.NewMeta(idAllocator, store, suite.nodeMgr, suite.metaStore)
 	distManager := meta.NewDistributionManager(suite.nodeMgr)
-	suite.broker = meta.NewMockBroker(suite.T())
 
 	suite.targetMgr = meta.NewMockTargetManager(suite.T())
-	suite.checker = NewIndexChecker(suite.meta, distManager, suite.broker, suite.nodeMgr, suite.targetMgr)
+	suite.checker = NewIndexChecker(suite.meta, distManager, suite.nodeMgr, suite.targetMgr)
 
 	suite.targetMgr.EXPECT().GetSealedSegment(mock.Anything, mock.Anything, mock.Anything, mock.Anything).RunAndReturn(func(ctx context.Context, cid, sid int64, i3 int32) *datapb.SegmentInfo {
 		return &datapb.SegmentInfo{
@@ -90,6 +88,27 @@ func (suite *IndexCheckerSuite) SetupTest() {
 			Level: datapb.SegmentLevel_L1,
 		}
 	}).Maybe()
+}
+
+// putBuild publishes a segment index record of collection 1 to the store.
+func (suite *IndexCheckerSuite) putBuild(segmentID, indexID, buildID int64, state commonpb.IndexState) {
+	suite.metaStore.PutSegmentIndexes(&model.SegmentIndex{
+		CollectionID: 1, SegmentID: segmentID, IndexID: indexID, BuildID: buildID,
+		IndexState: state, IndexFileKeys: []string{"index"},
+	})
+}
+
+// putFinishedBuild publishes a finished build with files, ready to load.
+func (suite *IndexCheckerSuite) putFinishedBuild(segmentID, indexID, buildID int64) {
+	suite.putBuild(segmentID, indexID, buildID, commonpb.IndexState_Finished)
+}
+
+// putSegment publishes a segment of collection 1 to the store.
+func (suite *IndexCheckerSuite) putSegment(segmentID int64, jsonKeyStats map[int64]*datapb.JsonKeyStats) {
+	suite.metaStore.PutSegment(&datapb.SegmentInfo{
+		ID: segmentID, CollectionID: 1, PartitionID: 1, InsertChannel: "test-insert-channel",
+		JsonKeyStats: jsonKeyStats,
+	})
 }
 
 func (suite *IndexCheckerSuite) TearDownTest() {
@@ -128,21 +147,12 @@ func (suite *IndexCheckerSuite) TestLoadIndex() {
 	// dist
 	checker.dist.SegmentDistManager.Update(1, utils.CreateTestSegment(1, 1, 2, 1, 1, "test-insert-channel"))
 
-	// broker
-	suite.broker.EXPECT().GetIndexInfo(mock.Anything, int64(1), int64(2)).
-		Return(map[int64][]*querypb.FieldIndexInfo{2: {
-			{
-				FieldID:        101,
-				IndexID:        1000,
-				EnableIndex:    true,
-				IndexFilePaths: []string{"index"},
-			},
-		}}, nil)
+	// store
+	suite.putSegment(2, nil)
+	suite.putFinishedBuild(2, 1000, 5)
 
 	suite.metaStore.PutIndex(&model.Index{CollectionID: 1, FieldID: 101, IndexID: 1000})
 
-	suite.broker.EXPECT().GetSegmentInfo(mock.Anything, mock.Anything).
-		Return([]*datapb.SegmentInfo{}, nil).Maybe()
 	tasks := checker.Check(context.Background())
 	suite.Require().Len(tasks, 1)
 
@@ -198,38 +208,19 @@ func (suite *IndexCheckerSuite) TestIndexInfoNotMatch() {
 	checker.dist.SegmentDistManager.Update(1, utils.CreateTestSegment(1, 1, 2, 1, 1, "test-insert-channel"))
 	checker.dist.SegmentDistManager.Update(1, utils.CreateTestSegment(1, 1, 3, 1, 1, "test-insert-channel"))
 
-	// broker
-	suite.broker.EXPECT().GetIndexInfo(mock.Anything, int64(1), mock.AnythingOfType("int64")).
-		RunAndReturn(func(ctx context.Context, collectionID int64, segmentIDs ...int64) (map[int64][]*querypb.FieldIndexInfo, error) {
-			if segmentIDs[0] == 2 {
-				return map[int64][]*querypb.FieldIndexInfo{2: {
-					{
-						FieldID:     101,
-						IndexID:     1000,
-						EnableIndex: false,
-					},
-				}}, nil
-			}
-			if segmentIDs[0] == 3 {
-				return map[int64][]*querypb.FieldIndexInfo{3: {
-					{
-						FieldID:     101,
-						IndexID:     1002,
-						EnableIndex: false,
-					},
-				}}, nil
-			}
-			return nil, nil
-		})
+	// store
+	suite.putSegment(2, nil)
+	suite.putSegment(3, nil)
+	suite.putBuild(2, 1000, 5, commonpb.IndexState_InProgress)
+	// 1002 is not a live definition of the collection.
+	suite.putFinishedBuild(3, 1002, 6)
 
 	suite.metaStore.PutIndex(&model.Index{CollectionID: 1, FieldID: 101, IndexID: 1000})
-	suite.broker.EXPECT().GetSegmentInfo(mock.Anything, mock.Anything).
-		Return([]*datapb.SegmentInfo{}, nil).Maybe()
 	tasks := checker.Check(context.Background())
 	suite.Require().Len(tasks, 0)
 }
 
-func (suite *IndexCheckerSuite) TestGetIndexInfoFailed() {
+func (suite *IndexCheckerSuite) TestNoStoreRecordNoTask() {
 	checker := suite.checker
 	ctx := context.Background()
 
@@ -261,13 +252,11 @@ func (suite *IndexCheckerSuite) TestGetIndexInfoFailed() {
 	// dist
 	checker.dist.SegmentDistManager.Update(1, utils.CreateTestSegment(1, 1, 2, 1, 1, "test-insert-channel"))
 	checker.dist.SegmentDistManager.Update(1, utils.CreateTestSegment(1, 1, 3, 1, 1, "test-insert-channel"))
+	suite.putSegment(2, nil)
+	suite.putSegment(3, nil)
 
-	// broker
-	suite.broker.EXPECT().GetIndexInfo(mock.Anything, int64(1), mock.AnythingOfType("int64")).
-		Return(nil, errors.New("mocked error"))
+	// store
 	suite.metaStore.PutIndex(&model.Index{CollectionID: 1, FieldID: 101, IndexID: 1000})
-	suite.broker.EXPECT().GetSegmentInfo(mock.Anything, mock.Anything).
-		Return([]*datapb.SegmentInfo{}, nil).Maybe()
 	tasks := checker.Check(context.Background())
 	suite.Require().Len(tasks, 0)
 }
@@ -303,33 +292,15 @@ func (suite *IndexCheckerSuite) TestCreateNewIndex() {
 
 	// dist
 	segment := utils.CreateTestSegment(1, 1, 2, 1, 1, "test-insert-channel")
-	segment.IndexInfo = map[int64]*querypb.FieldIndexInfo{1000: {
-		FieldID:     101,
-		IndexID:     1000,
-		EnableIndex: true,
-	}}
+	segment.IndexBuilds = map[int64]int64{1000: 0}
 	checker.dist.SegmentDistManager.Update(1, segment)
 
-	// broker
+	// store
 	suite.metaStore.PutIndex(&model.Index{CollectionID: 1, FieldID: 101, IndexID: 1000})
 	suite.metaStore.PutIndex(&model.Index{CollectionID: 1, FieldID: 102, IndexID: 1001})
-	suite.broker.EXPECT().GetIndexInfo(mock.Anything, mock.Anything, mock.AnythingOfType("int64")).
-		Return(map[int64][]*querypb.FieldIndexInfo{2: {
-			{
-				FieldID:        101,
-				IndexID:        1000,
-				EnableIndex:    true,
-				IndexFilePaths: []string{"index"},
-			},
-			{
-				FieldID:        102,
-				IndexID:        1001,
-				EnableIndex:    true,
-				IndexFilePaths: []string{"index"},
-			},
-		}}, nil)
-	suite.broker.EXPECT().GetSegmentInfo(mock.Anything, mock.Anything).
-		Return([]*datapb.SegmentInfo{}, nil).Maybe()
+	suite.putSegment(2, nil)
+	suite.putFinishedBuild(2, 1000, 0)
+	suite.putFinishedBuild(2, 1001, 7)
 	tasks := checker.Check(context.Background())
 	suite.Len(tasks, 1)
 	suite.Len(tasks[0].Actions(), 1)
@@ -349,9 +320,8 @@ func TestRemoveRedundantIndex(t *testing.T) {
 	metaStore := metacache.NewMetaStore(nil)
 	metaMgr := meta.NewMeta(params.RandomIncrementIDAllocator(), catalog, nodeMgr, metaStore)
 	distManager := meta.NewDistributionManager(nodeMgr)
-	broker := meta.NewMockBroker(t)
 	targetMgr := meta.NewMockTargetManager(t)
-	checker := NewIndexChecker(metaMgr, distManager, broker, nodeMgr, targetMgr)
+	checker := NewIndexChecker(metaMgr, distManager, nodeMgr, targetMgr)
 	targetMgr.EXPECT().GetSealedSegment(mock.Anything, mock.Anything, mock.Anything, mock.Anything).RunAndReturn(func(ctx context.Context, cid, sid int64, i3 int32) *datapb.SegmentInfo {
 		return &datapb.SegmentInfo{
 			ID:    sid,
@@ -386,24 +356,12 @@ func TestRemoveRedundantIndex(t *testing.T) {
 
 	// dist
 	segment := utils.CreateTestSegment(1, 1, 2, 1, 1, "test-insert-channel")
-	segment.IndexInfo = map[int64]*querypb.FieldIndexInfo{
-		1000: {
-			FieldID:     101,
-			IndexID:     1000,
-			EnableIndex: true,
-		},
-		1001: {
-			FieldID:     102,
-			IndexID:     1001,
-			EnableIndex: true,
-		},
-	}
+	segment.IndexBuilds = map[int64]int64{1000: 0, 1001: 0}
 	checker.dist.SegmentDistManager.Update(1, segment)
 
-	// broker
+	// store
 	metaStore.PutIndex(&model.Index{CollectionID: 1, FieldID: 101, IndexID: 1000})
-	broker.EXPECT().GetSegmentInfo(mock.Anything, mock.Anything).
-		Return([]*datapb.SegmentInfo{}, nil).Maybe()
+	metaStore.PutSegment(&datapb.SegmentInfo{ID: 2, CollectionID: 1, PartitionID: 1, InsertChannel: "test-insert-channel"})
 
 	tasks := checker.Check(context.Background())
 	require.Len(t, tasks, 1)
@@ -453,26 +411,18 @@ func (suite *IndexCheckerSuite) TestLoadJsonIndex() {
 		EnableIndex: true,
 	}
 
-	indexInfo := make(map[int64]*querypb.FieldIndexInfo)
-	indexInfo[fieldIndexInfo.IndexID] = fieldIndexInfo
 	segment := utils.CreateTestSegment(1, 1, 2, 1, 1, "test-insert-channel")
-	segment.IndexInfo = indexInfo
+	segment.IndexBuilds = map[int64]int64{fieldIndexInfo.IndexID: fieldIndexInfo.BuildID}
 	checker.dist.SegmentDistManager.Update(1, segment)
 
-	// broker
+	// store
 	suite.metaStore.PutIndex(&model.Index{CollectionID: 1, FieldID: 101, IndexID: 1000})
 	mockJSONKeyStats := map[int64]*datapb.JsonKeyStats{
 		101: {
 			FieldID: 101,
 		},
 	}
-	suite.broker.EXPECT().GetSegmentInfo(mock.Anything, mock.Anything).
-		Return([]*datapb.SegmentInfo{
-			{
-				ID:           2,
-				JsonKeyStats: mockJSONKeyStats,
-			},
-		}, nil).Maybe()
+	suite.putSegment(2, mockJSONKeyStats)
 	tasks := checker.Check(context.Background())
 	suite.Require().Len(tasks, 1)
 
@@ -528,21 +478,10 @@ func (suite *IndexCheckerSuite) TestJsonIndexNotMatch() {
 	// dist
 	checker.dist.SegmentDistManager.Update(1, utils.CreateTestSegment(1, 1, 2, 1, 1, "test-insert-channel"))
 
-	// broker
+	// store
 	suite.metaStore.PutIndex(&model.Index{CollectionID: 1, FieldID: 101, IndexID: 1000})
-	suite.broker.EXPECT().GetIndexInfo(mock.Anything, mock.Anything, mock.AnythingOfType("int64")).
-		Return(map[int64][]*querypb.FieldIndexInfo{2: {
-			{
-				FieldID:        101,
-				IndexID:        1000,
-				EnableIndex:    false,
-				IndexFilePaths: []string{"index"},
-			},
-		}}, nil)
-	suite.broker.EXPECT().GetSegmentInfo(mock.Anything, mock.Anything).
-		Return([]*datapb.SegmentInfo{
-			{},
-		}, nil).Maybe()
+	suite.putBuild(2, 1000, 5, commonpb.IndexState_InProgress)
+	suite.putSegment(2, nil)
 	tasks := checker.Check(context.Background())
 	suite.Require().Len(tasks, 0)
 }
@@ -585,30 +524,113 @@ func (suite *IndexCheckerSuite) TestCreateNewJsonIndex() {
 		EnableIndex: true,
 	}
 
-	indexInfo := make(map[int64]*querypb.FieldIndexInfo)
-	indexInfo[fieldIndexInfo.IndexID] = fieldIndexInfo
 	segment := utils.CreateTestSegment(1, 1, 2, 1, 1, "test-insert-channel")
-	segment.IndexInfo = indexInfo
+	segment.IndexBuilds = map[int64]int64{fieldIndexInfo.IndexID: fieldIndexInfo.BuildID}
 	checker.dist.SegmentDistManager.Update(1, segment)
 
-	// broker
+	// store
 	suite.metaStore.PutIndex(&model.Index{CollectionID: 1, FieldID: 101, IndexID: 1000})
 	mockJSONKeyStats := map[int64]*datapb.JsonKeyStats{
 		101: {
 			FieldID: 101,
 		},
 	}
-	suite.broker.EXPECT().GetSegmentInfo(mock.Anything, mock.Anything).
-		Return([]*datapb.SegmentInfo{
-			{
-				ID:           2,
-				JsonKeyStats: mockJSONKeyStats,
-			},
-		}, nil).Maybe()
+	suite.putSegment(2, mockJSONKeyStats)
 	tasks := checker.Check(context.Background())
 	suite.Len(tasks, 1)
 	suite.Len(tasks[0].Actions(), 1)
 	suite.Equal(tasks[0].Actions()[0].(*task.SegmentAction).Type(), task.ActionTypeReopen)
+}
+
+// setupLoadedIndex loads collection 1 on replica 200 (nodes 1 and 2) with
+// the live index 1000 on field 101, and puts segment 2 into the store and
+// onto node 1 with loaded builds.
+func (suite *IndexCheckerSuite) setupLoadedIndex(builds map[int64]int64) {
+	ctx := context.Background()
+	coll := utils.CreateTestCollection(1, 1)
+	coll.FieldIndexID = map[int64]int64{101: 1000}
+	suite.checker.meta.PutCollection(ctx, coll)
+	suite.metaStore.PutCollection(&metacache.CollectionInfo{ID: 1, Schema: &schemapb.CollectionSchema{
+		Fields: []*schemapb.FieldSchema{{FieldID: 101, DataType: schemapb.DataType_FloatVector, Name: "vec"}},
+	}})
+	suite.checker.meta.Put(ctx, utils.CreateTestReplica(200, 1, []int64{1, 2}))
+	for _, node := range []int64{1, 2} {
+		suite.nodeMgr.Add(session.NewNodeInfo(session.ImmutableNodeInfo{NodeID: node, Address: "localhost", Hostname: "localhost"}))
+		suite.checker.meta.HandleNodeUp(ctx, node)
+	}
+	suite.metaStore.PutIndex(&model.Index{CollectionID: 1, FieldID: 101, IndexID: 1000})
+	suite.putSegment(2, nil)
+	segment := utils.CreateTestSegment(1, 1, 2, 1, 1, "test-insert-channel")
+	segment.IndexBuilds = builds
+	suite.checker.dist.SegmentDistManager.Update(1, segment)
+}
+
+func (suite *IndexCheckerSuite) TestLoadedCurrentBuildNoTask() {
+	suite.setupLoadedIndex(map[int64]int64{1000: 9})
+	suite.putFinishedBuild(2, 1000, 9)
+	suite.Empty(suite.checker.Check(context.Background()))
+	suite.Empty(suite.checker.Check(context.Background()), "a loaded current build never asks for a reopen")
+}
+
+func (suite *IndexCheckerSuite) TestMissingIndexWaitsForReadyBuild() {
+	suite.setupLoadedIndex(nil)
+	for _, state := range []commonpb.IndexState{commonpb.IndexState_Unissued, commonpb.IndexState_InProgress, commonpb.IndexState_Failed} {
+		suite.putBuild(2, 1000, 9, state)
+		suite.Empty(suite.checker.Check(context.Background()), state.String())
+	}
+	suite.metaStore.PutSegmentIndexes(&model.SegmentIndex{
+		CollectionID: 1, SegmentID: 2, IndexID: 1000, BuildID: 9, IndexState: commonpb.IndexState_Finished,
+	})
+	suite.Empty(suite.checker.Check(context.Background()), "a finished build without files is not loadable")
+
+	suite.putFinishedBuild(2, 1000, 9)
+	tasks := suite.checker.Check(context.Background())
+	suite.Require().Len(tasks, 1)
+	suite.Equal(task.ActionTypeReopen, tasks[0].Actions()[0].(*task.SegmentAction).Type())
+}
+
+// A reopen loads only index IDs the segment lacks (segcore diffs by index
+// ID), so a newer build of an index the node already loaded must not ask
+// for one: it would load nothing and only relabel the loaded build.
+func (suite *IndexCheckerSuite) TestNewerBuildOfLoadedIndexNoTask() {
+	suite.setupLoadedIndex(map[int64]int64{1000: 7})
+	suite.putFinishedBuild(2, 1000, 9)
+	suite.Empty(suite.checker.Check(context.Background()))
+}
+
+// A newer build still in progress must not hold back a JSON stats reopen.
+func (suite *IndexCheckerSuite) TestNewerBuildInProgressAllowsJSONStatsReopen() {
+	paramtable.Get().Save(paramtable.Get().CommonCfg.EnabledJSONKeyStats.Key, "true")
+	defer paramtable.Get().Reset(paramtable.Get().CommonCfg.EnabledJSONKeyStats.Key)
+	suite.setupLoadedIndex(map[int64]int64{1000: 7})
+	coll := utils.CreateTestCollection(1, 1)
+	coll.FieldIndexID = map[int64]int64{101: 1000}
+	coll.LoadFields = []int64{101}
+	suite.checker.meta.PutCollection(context.Background(), coll)
+	suite.metaStore.PutCollection(&metacache.CollectionInfo{ID: 1, Schema: &schemapb.CollectionSchema{
+		Fields: []*schemapb.FieldSchema{{FieldID: 101, DataType: schemapb.DataType_JSON, Name: "JSON"}},
+	}})
+	suite.putSegment(2, map[int64]*datapb.JsonKeyStats{101: {FieldID: 101}})
+	suite.putBuild(2, 1000, 9, commonpb.IndexState_InProgress)
+	suite.Len(suite.checker.Check(context.Background()), 1)
+}
+
+func (suite *IndexCheckerSuite) TestDroppedIndexNotRequired() {
+	suite.setupLoadedIndex(map[int64]int64{1000: 9, 1001: 4})
+	suite.putFinishedBuild(2, 1000, 9)
+	suite.metaStore.PutIndex(&model.Index{CollectionID: 1, FieldID: 102, IndexID: 1001, IsDeleted: true})
+	suite.putFinishedBuild(2, 1001, 4)
+	// 1001 is dropped: it is not required, and the loaded copy is redundant.
+	tasks := suite.checker.Check(context.Background())
+	suite.Require().Len(tasks, 1)
+	suite.Equal("missing index", tasks[0].GetReason())
+}
+
+func (suite *IndexCheckerSuite) TestSegmentMissingFromStore() {
+	suite.setupLoadedIndex(nil)
+	suite.metaStore.RemoveSegment(2)
+	suite.putFinishedBuild(2, 1000, 9)
+	suite.Empty(suite.checker.Check(context.Background()))
 }
 
 func TestIndexChecker(t *testing.T) {

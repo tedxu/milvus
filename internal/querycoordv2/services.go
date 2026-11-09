@@ -518,7 +518,7 @@ func (s *Server) GetLoadSegmentInfo(ctx context.Context, req *querypb.GetSegment
 				}, nil
 			}
 			info := &querypb.SegmentInfo{}
-			utils.MergeMetaSegmentIntoSegmentInfo(info, segments...)
+			utils.MergeMetaSegmentIntoSegmentInfo(s.metaView, info, segments...)
 			infos = append(infos, info)
 		}
 	}

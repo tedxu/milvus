@@ -40,7 +40,6 @@ type ControllerBaseTestSuite struct {
 	suite.Suite
 	kv            kv.MetaKv
 	meta          *meta.Meta
-	broker        *meta.MockBroker
 	nodeMgr       *session.NodeManager
 	dist          *meta.DistributionManager
 	targetManager *meta.TargetManager
@@ -74,8 +73,7 @@ func (suite *ControllerBaseTestSuite) SetupTest() {
 	suite.nodeMgr = session.NewNodeManager()
 	suite.meta = meta.NewMeta(idAllocator, store, suite.nodeMgr, metacache.NewMetaStore(nil))
 	suite.dist = meta.NewDistributionManager(suite.nodeMgr)
-	suite.broker = meta.NewMockBroker(suite.T())
-	suite.targetManager = meta.NewTargetManager(suite.broker, suite.meta, metacache.NewMetaStore(nil))
+	suite.targetManager = meta.NewTargetManager(meta.NewMockBroker(suite.T()), suite.meta, metacache.NewMetaStore(nil))
 
 	suite.balancer = balance.NewMockBalancer(suite.T())
 	suite.scheduler = task.NewMockScheduler(suite.T())
@@ -84,7 +82,7 @@ func (suite *ControllerBaseTestSuite) SetupTest() {
 	assign.InitGlobalAssignPolicyFactory(suite.scheduler, suite.nodeMgr, suite.dist, suite.meta, suite.targetManager)
 	balance.InitGlobalBalancerFactory(suite.scheduler, suite.nodeMgr, suite.dist, suite.targetManager)
 
-	suite.controller = NewCheckerController(suite.meta, suite.dist, suite.targetManager, suite.nodeMgr, suite.scheduler, suite.broker)
+	suite.controller = NewCheckerController(suite.meta, suite.dist, suite.targetManager, suite.nodeMgr, suite.scheduler)
 }
 
 func (suite *ControllerBaseTestSuite) TearDownTest() {

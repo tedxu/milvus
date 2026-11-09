@@ -31,6 +31,7 @@ import (
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/atomic"
 
+	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
 	"github.com/milvus-io/milvus-proto/go-api/v3/msgpb"
 	"github.com/milvus-io/milvus/internal/metacache"
 	"github.com/milvus-io/milvus/internal/querycoordv2/meta"
@@ -804,4 +805,37 @@ func TestDistributionDoesNotRetainStoreProtos(t *testing.T) {
 
 func TestDistHandlerSuite(t *testing.T) {
 	suite.Run(t, new(DistHandlerSuite))
+}
+
+func TestDistHandlerTrimsIndexInfo(t *testing.T) {
+	ctx := context.Background()
+	nodeID := time.Now().UnixNano() % 1000000
+
+	targetMgr := meta.NewMockTargetManager(t)
+	targetMgr.EXPECT().GetSealedSegment(mock.Anything, int64(1), int64(7), mock.Anything).Return(nil)
+	nodeManager := session.NewNodeManager()
+	handler := &distHandler{
+		nodeID:      nodeID,
+		nodeManager: nodeManager,
+		dist:        meta.NewDistributionManager(nodeManager),
+		target:      targetMgr,
+	}
+
+	handler.updateSegmentsDistribution(ctx, &querypb.GetDataDistributionResponse{
+		Status: merr.Success(),
+		NodeID: nodeID,
+		Segments: []*querypb.SegmentVersionInfo{{
+			ID: 7, Collection: 1, Partition: 2, Channel: "ch", Version: 1,
+			IndexInfo: map[int64]*querypb.FieldIndexInfo{
+				100: {IndexID: 100, BuildID: 11, IndexFilePaths: []string{"a"}},
+				101: {IndexID: 101, BuildID: 12, IndexParams: []*commonpb.KeyValuePair{{Key: "k", Value: "v"}}},
+			},
+			JsonStatsInfo: map[int64]*querypb.JsonStatsInfo{200: {FieldID: 200, DataFormatVersion: 3}},
+		}},
+	})
+
+	segments := handler.dist.SegmentDistManager.GetByFilter(meta.WithNodeID(nodeID))
+	require.Len(t, segments, 1)
+	assert.Equal(t, map[int64]int64{100: 11, 101: 12}, segments[0].IndexBuilds)
+	assert.Equal(t, map[int64]int64{200: 3}, segments[0].JSONStatsFormats)
 }

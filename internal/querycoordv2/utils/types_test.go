@@ -24,7 +24,11 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/milvus-io/milvus-proto/go-api/v3/msgpb"
+	"github.com/milvus-io/milvus/internal/metacache/metacachetest"
+	"github.com/milvus-io/milvus/internal/metastore/model"
+	"github.com/milvus-io/milvus/internal/querycoordv2/meta"
 	"github.com/milvus-io/milvus/pkg/v3/proto/datapb"
+	"github.com/milvus-io/milvus/pkg/v3/proto/querypb"
 	"github.com/milvus-io/milvus/pkg/v3/util/tsoutil"
 )
 
@@ -180,4 +184,23 @@ func TestPackSegmentLoadInfo_CommitTimestamp(t *testing.T) {
 	loadInfo := PackSegmentLoadInfo(seg, checkpoint, nil)
 	assert.Equal(t, commitTs, loadInfo.GetCommitTimestamp())
 	assert.Equal(t, dataVersion, loadInfo.GetDataVersion())
+}
+
+func TestMergeMetaSegmentIntoSegmentInfoReadsStore(t *testing.T) {
+	store := metacachetest.NewMetaStore()
+	store.PutIndex(&model.Index{CollectionID: 1, FieldID: 101, IndexID: 100, IndexName: "vec"})
+	store.PutSegmentIndexes(&model.SegmentIndex{CollectionID: 1, SegmentID: 10, IndexID: 100, BuildID: 9})
+
+	segment := meta.SegmentFromInfo(&datapb.SegmentInfo{ID: 10, CollectionID: 1, InsertChannel: "ch"})
+	segment.Node = 3
+	segment.IndexBuilds = map[int64]int64{100: 9}
+	info := &querypb.SegmentInfo{}
+	MergeMetaSegmentIntoSegmentInfo(store, info, segment)
+
+	assert.Equal(t, "vec", info.GetIndexName())
+	assert.Equal(t, int64(100), info.GetIndexID())
+	assert.Len(t, info.GetIndexInfos(), 1)
+	assert.Equal(t, int64(101), info.GetIndexInfos()[0].GetFieldID())
+	assert.Empty(t, info.GetIndexInfos()[0].GetIndexFilePaths())
+	assert.Equal(t, []int64{3}, info.GetNodeIds())
 }
