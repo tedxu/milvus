@@ -839,3 +839,38 @@ func TestDistHandlerTrimsIndexInfo(t *testing.T) {
 	assert.Equal(t, map[int64]int64{100: 11, 101: 12}, segments[0].IndexBuilds)
 	assert.Equal(t, map[int64]int64{200: 3}, segments[0].JSONStatsFormats)
 }
+
+func TestDistHandlerGrowingPositions(t *testing.T) {
+	ctx := context.Background()
+	nodeID := time.Now().UnixNano() % 1000000
+
+	targetMgr := meta.NewMockTargetManager(t)
+	targetMgr.EXPECT().GetDmChannel(mock.Anything, int64(1), "ch", mock.Anything).Return(nil)
+	nodeManager := session.NewNodeManager()
+	handler := &distHandler{
+		nodeID:      nodeID,
+		nodeManager: nodeManager,
+		dist:        meta.NewDistributionManager(nodeManager),
+		target:      targetMgr,
+	}
+
+	position := &msgpb.MsgPosition{ChannelName: "ch", Timestamp: 100}
+	handler.updateChannelsDistribution(ctx, &querypb.GetDataDistributionResponse{
+		Status:   merr.Success(),
+		NodeID:   nodeID,
+		Channels: []*querypb.ChannelVersionInfo{{Channel: "ch", Collection: 1, Version: 1}},
+		LeaderViews: []*querypb.LeaderView{{
+			Collection:      1,
+			Channel:         "ch",
+			GrowingSegments: map[int64]*msgpb.MsgPosition{7: position},
+			Status:          &querypb.LeaderViewStatus{Serviceable: true},
+		}},
+	})
+
+	channels := handler.dist.ChannelDistManager.GetByFilter(meta.WithNodeID2Channel(nodeID))
+	require.Len(t, channels, 1)
+	view := channels[0].View
+	assert.Equal(t, map[int64]*msgpb.MsgPosition{7: position}, view.GrowingSegments)
+	assert.Equal(t, "ch", view.Channel)
+	assert.Equal(t, nodeID, view.ID)
+}

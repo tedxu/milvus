@@ -322,7 +322,7 @@ func (suite *SegmentCheckerTestSuite) TestReleaseRepeatedSegments() {
 		},
 		Node:    2,
 		Version: 1,
-		View:    utils.CreateTestLeaderView(2, 1, "test-insert-channel", map[int64]int64{1: 2}, map[int64]*meta.Segment{}),
+		View:    utils.CreateTestLeaderView(2, 1, "test-insert-channel", map[int64]int64{1: 2}, map[int64]*msgpb.MsgPosition{}),
 	})
 
 	// Capture tasks added via scheduler.Add()
@@ -352,7 +352,7 @@ func (suite *SegmentCheckerTestSuite) TestReleaseRepeatedSegments() {
 		},
 		Node:    2,
 		Version: 1,
-		View:    utils.CreateTestLeaderView(2, 1, "test-insert-channel", map[int64]int64{1: 1}, map[int64]*meta.Segment{}),
+		View:    utils.CreateTestLeaderView(2, 1, "test-insert-channel", map[int64]int64{1: 1}, map[int64]*msgpb.MsgPosition{}),
 	})
 	addedTasks = nil
 	tasks = checker.Check(context.TODO())
@@ -404,7 +404,7 @@ func (suite *SegmentCheckerTestSuite) TestReleaseDirtySegments() {
 		},
 		Node:    2,
 		Version: 1,
-		View:    utils.CreateTestLeaderView(2, 1, "test-insert-channel", map[int64]int64{1: 2}, map[int64]*meta.Segment{}),
+		View:    utils.CreateTestLeaderView(2, 1, "test-insert-channel", map[int64]int64{1: 2}, map[int64]*msgpb.MsgPosition{}),
 	})
 
 	// Mock scheduler.Add() for replica-related tasks
@@ -451,13 +451,10 @@ func (suite *SegmentCheckerTestSuite) TestReleaseGrowingSegments() {
 	checker.targetMgr.UpdateCollectionCurrentTarget(ctx, int64(1))
 	checker.targetMgr.UpdateCollectionNextTarget(ctx, int64(1))
 
-	growingSegments := make(map[int64]*meta.Segment)
-	growingSegments[2] = utils.CreateTestSegment(1, 1, 2, 2, 0, "test-insert-channel")
-	growingSegments[2].StartPosition = &msgpb.MsgPosition{Timestamp: 2}
-	growingSegments[3] = utils.CreateTestSegment(1, 1, 3, 2, 1, "test-insert-channel")
-	growingSegments[3].StartPosition = &msgpb.MsgPosition{Timestamp: 3}
-	growingSegments[4] = utils.CreateTestSegment(1, 1, 4, 2, 1, "test-insert-channel")
-	growingSegments[4].StartPosition = &msgpb.MsgPosition{Timestamp: 11}
+	growingSegments := make(map[int64]*msgpb.MsgPosition)
+	growingSegments[2] = &msgpb.MsgPosition{Timestamp: 2}
+	growingSegments[3] = &msgpb.MsgPosition{Timestamp: 3}
+	growingSegments[4] = &msgpb.MsgPosition{Timestamp: 11}
 
 	checker.dist.SegmentDistManager.Update(2, utils.CreateTestSegment(1, 1, 3, 2, 2, "test-insert-channel"))
 	checker.dist.ChannelDistManager.Update(2, &meta.DmChannel{
@@ -539,10 +536,9 @@ func (suite *SegmentCheckerTestSuite) TestReleaseCompactedGrowingSegments() {
 	checker.targetMgr.UpdateCollectionCurrentTarget(ctx, int64(1))
 	checker.targetMgr.UpdateCollectionNextTarget(ctx, int64(1))
 
-	growingSegments := make(map[int64]*meta.Segment)
+	growingSegments := make(map[int64]*msgpb.MsgPosition)
 	// segment start pos after chekcpoint
-	growingSegments[4] = utils.CreateTestSegment(1, 1, 4, 2, 1, "test-insert-channel")
-	growingSegments[4].StartPosition = &msgpb.MsgPosition{Timestamp: 11}
+	growingSegments[4] = &msgpb.MsgPosition{Timestamp: 11}
 
 	checker.dist.SegmentDistManager.Update(2, utils.CreateTestSegment(1, 1, 3, 2, 2, "test-insert-channel"))
 	checker.dist.ChannelDistManager.Update(2, &meta.DmChannel{
@@ -604,9 +600,8 @@ func (suite *SegmentCheckerTestSuite) TestSkipReleaseGrowingSegments() {
 	checker.targetMgr.UpdateCollectionCurrentTarget(ctx, int64(1))
 	checker.targetMgr.UpdateCollectionNextTarget(ctx, int64(1))
 
-	growingSegments := make(map[int64]*meta.Segment)
-	growingSegments[2] = utils.CreateTestSegment(1, 1, 2, 2, 0, "test-insert-channel")
-	growingSegments[2].StartPosition = &msgpb.MsgPosition{Timestamp: 2}
+	growingSegments := make(map[int64]*msgpb.MsgPosition)
+	growingSegments[2] = &msgpb.MsgPosition{Timestamp: 2}
 
 	checker.dist.ChannelDistManager.Update(2, &meta.DmChannel{
 		VchannelInfo: &datapb.VchannelInfo{
@@ -1042,7 +1037,7 @@ func (suite *SegmentCheckerTestSuite) TestFilterOutExistedOnLeader() {
 
 	// Test case 2: Segment serving on leader - should be filtered out
 	leaderView1 := utils.CreateTestLeaderView(nodeID1, collectionID, channel,
-		map[int64]int64{segmentID1: nodeID1}, map[int64]*meta.Segment{})
+		map[int64]int64{segmentID1: nodeID1}, map[int64]*msgpb.MsgPosition{})
 	checker.dist.ChannelDistManager.Update(nodeID1, &meta.DmChannel{
 		VchannelInfo: &datapb.VchannelInfo{
 			CollectionID: collectionID,
@@ -1063,7 +1058,7 @@ func (suite *SegmentCheckerTestSuite) TestFilterOutExistedOnLeader() {
 
 	// Test case 3: Multiple leader views with segments serving on different nodes
 	leaderView2 := utils.CreateTestLeaderView(nodeID2, collectionID, channel,
-		map[int64]int64{segmentID2: nodeID2}, map[int64]*meta.Segment{})
+		map[int64]int64{segmentID2: nodeID2}, map[int64]*msgpb.MsgPosition{})
 	checker.dist.ChannelDistManager.Update(nodeID2, &meta.DmChannel{
 		VchannelInfo: &datapb.VchannelInfo{
 			CollectionID: collectionID,
@@ -1080,7 +1075,7 @@ func (suite *SegmentCheckerTestSuite) TestFilterOutExistedOnLeader() {
 
 	// Test case 4: Segment exists in leader view but on different node - should not be filtered
 	leaderView3 := utils.CreateTestLeaderView(nodeID1, collectionID, channel,
-		map[int64]int64{segmentID3: nodeID2}, map[int64]*meta.Segment{}) // segmentID3 exists but on nodeID2, not nodeID1
+		map[int64]int64{segmentID3: nodeID2}, map[int64]*msgpb.MsgPosition{}) // segmentID3 exists but on nodeID2, not nodeID1
 	checker.dist.ChannelDistManager.Update(nodeID1, &meta.DmChannel{
 		VchannelInfo: &datapb.VchannelInfo{
 			CollectionID: collectionID,
@@ -1149,7 +1144,7 @@ func (suite *SegmentCheckerTestSuite) TestFilterOutSegmentInUse() {
 
 	// Test case 2: Leader view with outdated target version - segment should be filtered (still in use)
 	leaderView1 := utils.CreateTestLeaderView(nodeID1, collectionID, channel,
-		map[int64]int64{}, map[int64]*meta.Segment{})
+		map[int64]int64{}, map[int64]*msgpb.MsgPosition{})
 	leaderView1.TargetVersion = currentTargetVersion - 1 // Outdated version
 	checker.dist.ChannelDistManager.Update(nodeID1, &meta.DmChannel{
 		VchannelInfo: &datapb.VchannelInfo{
@@ -1166,7 +1161,7 @@ func (suite *SegmentCheckerTestSuite) TestFilterOutSegmentInUse() {
 
 	// Test case 3: Leader view with current target version - segment should not be filtered
 	leaderView2 := utils.CreateTestLeaderView(nodeID1, collectionID, channel,
-		map[int64]int64{}, map[int64]*meta.Segment{})
+		map[int64]int64{}, map[int64]*msgpb.MsgPosition{})
 	leaderView2.TargetVersion = currentTargetVersion
 	checker.dist.ChannelDistManager.Update(nodeID1, &meta.DmChannel{
 		VchannelInfo: &datapb.VchannelInfo{
@@ -1183,7 +1178,7 @@ func (suite *SegmentCheckerTestSuite) TestFilterOutSegmentInUse() {
 
 	// Test case 4: Leader view with initial target version - segment should not be filtered
 	leaderView3 := utils.CreateTestLeaderView(nodeID2, collectionID, channel,
-		map[int64]int64{}, map[int64]*meta.Segment{})
+		map[int64]int64{}, map[int64]*msgpb.MsgPosition{})
 	leaderView3.TargetVersion = initialTargetVersion
 	checker.dist.ChannelDistManager.Update(nodeID2, &meta.DmChannel{
 		VchannelInfo: &datapb.VchannelInfo{
@@ -1200,11 +1195,11 @@ func (suite *SegmentCheckerTestSuite) TestFilterOutSegmentInUse() {
 
 	// Test case 5: Multiple leader views with mixed versions - segment should be filtered (still in use)
 	leaderView4 := utils.CreateTestLeaderView(nodeID1, collectionID, channel,
-		map[int64]int64{}, map[int64]*meta.Segment{})
+		map[int64]int64{}, map[int64]*msgpb.MsgPosition{})
 	leaderView4.TargetVersion = currentTargetVersion - 1 // Outdated
 
 	leaderView5 := utils.CreateTestLeaderView(nodeID2, collectionID, channel,
-		map[int64]int64{}, map[int64]*meta.Segment{})
+		map[int64]int64{}, map[int64]*msgpb.MsgPosition{})
 	leaderView5.TargetVersion = currentTargetVersion // Up to date
 
 	checker.dist.ChannelDistManager.Update(nodeID1, &meta.DmChannel{

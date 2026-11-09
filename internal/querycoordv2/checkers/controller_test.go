@@ -147,7 +147,7 @@ func (suite *CheckerControllerSuite) TestBasic() {
 		},
 		Node:    2,
 		Version: 1,
-		// View:    utils.CreateTestLeaderView(2, 1, "test-insert-channel", map[int64]int64{1: 2}, map[int64]*meta.Segment{}),
+		// View:    utils.CreateTestLeaderView(2, 1, "test-insert-channel", map[int64]int64{1: 2}, map[int64]*msgpb.MsgPosition{}),
 		View: &meta.LeaderView{
 			ID:      2,
 			Channel: "test-insert-channel",

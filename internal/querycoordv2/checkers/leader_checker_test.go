@@ -565,7 +565,7 @@ func (suite *LeaderCheckerTestSuite) TestUpdatePartitionStats() {
 	loadVersion := time.Now().UnixMilli()
 	observer.dist.SegmentDistManager.Update(1, utils.CreateTestSegment(1, 1, 2, 1, loadVersion, testChannel))
 	// observer.dist.ChannelDistManager.Update(2, utils.CreateTestChannel(1, 2, 1, testChannel))
-	// view := utils.CreateTestLeaderView(2, 1, testChannel, map[int64]int64{2: 1}, map[int64]*meta.Segment{})
+	// view := utils.CreateTestLeaderView(2, 1, testChannel, map[int64]int64{2: 1}, map[int64]*msgpb.MsgPosition{})
 	// view.PartitionStatsVersions = map[int64]int64{
 	// 1: 100,
 	// }

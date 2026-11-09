@@ -22,6 +22,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 
+	"github.com/milvus-io/milvus-proto/go-api/v3/msgpb"
 	"github.com/milvus-io/milvus/internal/coordinator/snmanager"
 	"github.com/milvus-io/milvus/internal/querycoordv2/session"
 	"github.com/milvus-io/milvus/pkg/v3/proto/datapb"
@@ -534,4 +535,19 @@ func TestGetChannelDistJSON(t *testing.T) {
 
 	views = manager.GetLeaderView(300)
 	assert.Len(t, views, 0)
+}
+
+func TestLeaderViewMetricsGrowing(t *testing.T) {
+	view := &LeaderView{
+		ID:              3,
+		CollectionID:    1,
+		Channel:         "ch",
+		GrowingSegments: map[int64]*msgpb.MsgPosition{7: {Timestamp: 1}, 8: nil},
+	}
+	metrics := newMetricsLeaderViewFrom(view)
+	got := make(map[int64]int64, len(metrics.GrowingSegments))
+	for _, segment := range metrics.GrowingSegments {
+		got[segment.SegmentID] = segment.NodeID
+	}
+	assert.Equal(t, map[int64]int64{7: 3, 8: 3}, got)
 }

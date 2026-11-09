@@ -29,6 +29,7 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
+	"github.com/milvus-io/milvus-proto/go-api/v3/msgpb"
 	"github.com/milvus-io/milvus-proto/go-api/v3/schemapb"
 	"github.com/milvus-io/milvus/internal/coordinator/snmanager"
 	"github.com/milvus-io/milvus/internal/json"
@@ -970,8 +971,8 @@ func (suite *TaskSuite) TestStreamingReduceWaitsForGrowingSegmentDist() {
 			ID:           nodeID,
 			CollectionID: suite.collection,
 			Channel:      channelName,
-			GrowingSegments: map[int64]*meta.Segment{
-				segmentID: utils.CreateTestSegment(suite.collection, 1, segmentID, nodeID, 1, channelName),
+			GrowingSegments: map[int64]*msgpb.MsgPosition{
+				segmentID: {},
 			},
 		},
 	})
@@ -2075,7 +2076,6 @@ func (suite *TaskSuite) TestSegmentTaskDeltaSnapshotKeepsStreamingReduceUntilGro
 	scheduler := suite.newScheduler()
 
 	coll := int64(1001)
-	partition := int64(100)
 	channel := "channel-1"
 	sourceNode := int64(1)
 	segmentID := int64(102)
@@ -2092,8 +2092,8 @@ func (suite *TaskSuite) TestSegmentTaskDeltaSnapshotKeepsStreamingReduceUntilGro
 			ID:           sourceNode,
 			CollectionID: coll,
 			Channel:      channel,
-			GrowingSegments: map[int64]*meta.Segment{
-				segmentID: utils.CreateTestSegment(coll, partition, segmentID, sourceNode, 1, channel),
+			GrowingSegments: map[int64]*msgpb.MsgPosition{
+				segmentID: {},
 			},
 		},
 	})

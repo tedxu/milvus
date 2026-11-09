@@ -24,6 +24,7 @@ import (
 	"golang.org/x/time/rate"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/milvus-io/milvus-proto/go-api/v3/msgpb"
 	"github.com/milvus-io/milvus/internal/querycoordv2/session"
 	"github.com/milvus-io/milvus/internal/util/metrics"
 	"github.com/milvus-io/milvus/pkg/v3/mlog"
@@ -34,12 +35,14 @@ import (
 )
 
 type LeaderView struct {
-	ID                     int64
-	CollectionID           int64
-	Channel                string
-	Version                int64
-	Segments               map[int64]*querypb.SegmentDist
-	GrowingSegments        map[int64]*Segment
+	ID           int64
+	CollectionID int64
+	Channel      string
+	Version      int64
+	Segments     map[int64]*querypb.SegmentDist
+	// GrowingSegments maps each growing segment to its start position, as
+	// the delegator reports it. Channel, collection and node are the view's.
+	GrowingSegments        map[int64]*msgpb.MsgPosition
 	TargetVersion          int64
 	NumOfGrowingRows       int64
 	PartitionStatsVersions map[int64]int64
@@ -52,7 +55,7 @@ func (view *LeaderView) Clone() *LeaderView {
 		segments[k] = v
 	}
 
-	growings := make(map[int64]*Segment)
+	growings := make(map[int64]*msgpb.MsgPosition, len(view.GrowingSegments))
 	for k, v := range view.GrowingSegments {
 		growings[k] = v
 	}
@@ -487,10 +490,10 @@ func newMetricsLeaderViewFrom(lv *LeaderView) *metricsinfo.LeaderView {
 		})
 	}
 
-	for _, seg := range lv.GrowingSegments {
+	for segmentID := range lv.GrowingSegments {
 		leaderView.GrowingSegments = append(leaderView.GrowingSegments, &metricsinfo.Segment{
-			SegmentID: seg.ID,
-			NodeID:    seg.Node,
+			SegmentID: segmentID,
+			NodeID:    lv.ID,
 		})
 	}
 	return leaderView

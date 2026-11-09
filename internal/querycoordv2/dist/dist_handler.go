@@ -19,6 +19,7 @@ package dist
 import (
 	"context"
 	"fmt"
+	"maps"
 	"sync"
 	"time"
 
@@ -27,7 +28,6 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
-	"github.com/milvus-io/milvus-proto/go-api/v3/msgpb"
 	"github.com/milvus-io/milvus/internal/querycoordv2/meta"
 	. "github.com/milvus-io/milvus/internal/querycoordv2/params"
 	"github.com/milvus-io/milvus/internal/querycoordv2/session"
@@ -322,18 +322,9 @@ func (dh *distHandler) updateChannelsDistribution(ctx context.Context, resp *que
 			}
 		}
 
-		// Pre-allocate growing segments map
-		growings := lo.MapValues(lview.GetGrowingSegments(), func(position *msgpb.MsgPosition, id int64) *meta.Segment {
-			return &meta.Segment{
-				SegmentInfo: &datapb.SegmentInfo{
-					ID:            id,
-					CollectionID:  collectionID,
-					StartPosition: position,
-					InsertChannel: channelName,
-				},
-				Node: resp.GetNodeID(),
-			}
-		})
+		// The view keeps each growing segment's start position; the channel,
+		// collection and node are the view's own.
+		growings := maps.Clone(lview.GetGrowingSegments())
 
 		// Update DmChannel and register shard leader in same loop
 		dmChannel := &meta.DmChannel{

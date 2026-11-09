@@ -293,10 +293,21 @@ func (c *SegmentChecker) getGrowingSegmentDiff(ctx context.Context, collectionID
 		}
 
 		// get segment which exist on leader view, but not on current target and next target
-		for _, segment := range view.GrowingSegments {
-			if !currentTargetSegmentIDs.Contain(segment.GetID()) && nextTargetExist && !nextTargetSegmentIDs.Contain(segment.GetID()) {
-				if channel, ok := currentTargetChannelMap[segment.InsertChannel]; ok {
-					timestampInSegment := segment.GetStartPosition().GetTimestamp()
+		for segmentID, position := range view.GrowingSegments {
+			if !currentTargetSegmentIDs.Contain(segmentID) && nextTargetExist && !nextTargetSegmentIDs.Contain(segmentID) {
+				if channel, ok := currentTargetChannelMap[view.Channel]; ok {
+					// The reduce task needs the values ingestion used to keep per
+					// growing segment: the view's collection, channel and node.
+					segment := &meta.Segment{
+						SegmentInfo: &datapb.SegmentInfo{
+							ID:            segmentID,
+							CollectionID:  view.CollectionID,
+							StartPosition: position,
+							InsertChannel: view.Channel,
+						},
+						Node: view.ID,
+					}
+					timestampInSegment := position.GetTimestamp()
 					timestampInTarget := channel.GetSeekPosition().GetTimestamp()
 					// release growing segment if in dropped segment list
 					if funcutil.SliceContain(channel.GetDroppedSegmentIds(), segment.GetID()) {

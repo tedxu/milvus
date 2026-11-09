@@ -17,6 +17,7 @@
 package utils
 
 import (
+	"github.com/milvus-io/milvus-proto/go-api/v3/msgpb"
 	"github.com/milvus-io/milvus-proto/go-api/v3/schemapb"
 	"github.com/milvus-io/milvus/internal/querycoordv2/meta"
 	"github.com/milvus-io/milvus/pkg/v3/proto/datapb"
@@ -24,7 +25,7 @@ import (
 	"github.com/milvus-io/milvus/pkg/v3/util/typeutil"
 )
 
-func CreateTestLeaderView(id, collection int64, channel string, segments map[int64]int64, growings map[int64]*meta.Segment) *meta.LeaderView {
+func CreateTestLeaderView(id, collection int64, channel string, segments map[int64]int64, growings map[int64]*msgpb.MsgPosition) *meta.LeaderView {
 	segmentVersions := make(map[int64]*querypb.SegmentDist)
 	for segment, node := range segments {
 		segmentVersions[segment] = &querypb.SegmentDist{
